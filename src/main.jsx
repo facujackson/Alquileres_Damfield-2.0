@@ -1,13 +1,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { installCloudStorage } from './cloudStorage';
 
-if (!window.storage) {
-  window.storage = {
-    get: async () => null,
-    set: async () => {},
-  };
-}
+installCloudStorage();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
