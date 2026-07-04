@@ -1,9 +1,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import { installCloudStorage } from './cloudStorage';
+import { installFirebaseStorage } from './firebaseStorage';
 
-installCloudStorage();
+installFirebaseStorage();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
