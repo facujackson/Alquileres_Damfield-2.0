@@ -47,6 +47,18 @@ const ALL_HOURS    = Array.from({length:18},(_,i)=>i+6);
 const DEFAULT_HOURS= [18,19,20,21,22];
 const DAYS         = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
 
+// ─── LOGO SVG ────────────────────────────────────────────────────────────────
+function DamfieldLogo({ size = 32 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 89.63 100.09" xmlns="http://www.w3.org/2000/svg" style={{flexShrink:0}}>
+      <path fill="#e1dfe0" d="M43.94,84.63c-1.53.45-3.11.58-4.63.41-.38-.06-.76-.07-1.14-.16l-1.12-.27c-.37-.08-.73-.26-1.09-.38-.36-.14-.72-.24-1.06-.44-.7-.35-1.4-.64-2.05-1.09l-.99-.61c-.35-.22-.76-.5-1.15-.73-1.59-.95-3.3-1.88-5.23-2.48-.96-.28-1.99-.48-2.99-.51-.96-.04-1.94.03-2.91.19-1.94.34-3.88,1.09-5.48,2.25-1.6,1.15-2.85,2.66-3.61,4.39l.37.41c1.79-.53,3.35-1.02,4.86-1.26,1.5-.27,2.92-.33,4.37-.31l2.2.06c.7.02,1.37.03,2.07.11,1.41.1,2.9.44,4.33,1.05.37.16.69.31,1.1.49l1.28.56c.83.4,1.75.65,2.64.93.44.15.92.21,1.38.3.47.07.92.19,1.39.22l1.41.09c.47.02.95-.04,1.42-.05,3.77-.32,7.27-2.19,9.36-5.08l-.42-.35c-1.26,1.06-2.77,1.82-4.3,2.27h0Z"/>
+      <path fill="#e1dfe0" d="M86.66,32.43c-2.07-6.17-4.99-11.64-8.76-16.44-3.77-4.79-8.49-8.66-14.17-11.59C58.05,1.47,51.91,0,45.3,0H0v.28l10.26,4.61v35.82c.1-.06.21-.11.31-.16h13.69c.15.08.3.16.45.25v-.25h.08l-.08-.1V2.32h13.12c6.98,0,13.35,2.36,19.12,7.08,5.77,4.72,10.2,10.83,13.3,18.32,3.09,7.49,4.59,15.38,4.5,23.66-.09,8.52-1.72,16.31-4.89,23.38-3.16,7.07-7.56,12.68-13.19,16.82s-11.91,6.21-18.85,6.21h-5.8l-21.58-.45v2.75h34.85c8.65,0,16.37-2.23,23.14-6.7,6.77-4.47,11.96-10.38,15.57-17.73,3.61-7.35,5.48-15.45,5.62-24.29.09-6.47-.9-12.78-2.97-18.95h.01Z"/>
+      <path fill="#e1dfe0" d="M10.65,71.9c1.94-.67,3.68-1.26,5.4-1.58,1.7-.35,3.35-.47,5.01-.47.84,0,1.67.01,2.52.04.82.02,1.59.04,2.4.13,1.62.13,3.29.54,4.86,1.26l.59.28.62.31,1.41.67c.91.48,1.94.77,2.92,1.12,2.03.54,4.14.91,6.26.7,2.1-.18,4.14-.79,5.92-1.79.9-.48,1.71-1.09,2.48-1.73.75-.68,1.43-1.38,2.02-2.2l-.42-.35c-1.39,1.23-3.07,2.14-4.78,2.71-1.72.57-3.5.77-5.23.61-1.74-.09-3.41-.69-4.99-1.39-.78-.41-1.58-.73-2.31-1.25l-1.11-.71c-.17-.1-.41-.27-.62-.41l-.66-.43c-1.79-1.11-3.74-2.11-5.88-2.73-.54-.15-1.08-.27-1.64-.37-.55-.08-1.14-.15-1.67-.16-1.06-.05-2.15.04-3.22.21-2.15.37-4.28,1.16-6.08,2.4-1.8,1.23-3.25,2.85-4.17,4.72l.37.41h0Z"/>
+      <path fill="#e1dfe0" d="M21.98,56.11c1.88,0,3.6.04,5.42.24,1.81.18,3.66.63,5.38,1.42.44.2.83.4,1.31.64.51.25.99.52,1.51.75.52.23,1.02.47,1.56.66l.79.3.81.26c1.09.33,2.21.56,3.34.7,1.13.15,2.28.17,3.42.1,2.27-.17,4.49-.82,6.43-1.9,1.93-1.08,3.62-2.49,4.91-4.24l-.42-.35c-3.06,2.7-7.13,4.1-10.93,3.74-.95-.07-1.89-.23-2.81-.49-.92-.25-1.81-.58-2.68-.99l-.65-.29-.64-.33c-.43-.21-.84-.47-1.25-.72-.42-.24-.81-.53-1.22-.79-.42-.28-.93-.63-1.41-.91-1.96-1.18-4.07-2.21-6.35-2.87-1.14-.31-2.32-.53-3.52-.59-1.21-.06-2.37.02-3.53.21-2.32.39-4.62,1.22-6.57,2.52-1.95,1.31-3.55,3.01-4.6,5l.37.41c2.07-.78,3.96-1.46,5.82-1.87,1.86-.42,3.67-.57,5.51-.6h0Z"/>
+    </svg>
+  );
+}
+
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const dateKey = d => d.toISOString().split("T")[0];
 const pad     = n => String(n).padStart(2,"0");
@@ -54,6 +66,24 @@ const fmtMoney= n => (n==null||n=="") ? "—" : `$${Number(n).toLocaleString("es
 const fmtMonthYear = d => d.toLocaleDateString("es-AR",{month:"long",year:"numeric"});
 const fmtDateTime  = s => s ? new Date(s).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—";
 const groupColor   = g => ({futbol:"#22c55e",hockey:"#3b82f6",otros:"#f59e0b",coworking:"#8b5cf6"}[g]||"#fff");
+
+function getMonthGrid(base) {
+  const year = base.getFullYear(), month = base.getMonth();
+  const firstDay = new Date(year, month, 1);
+  let startDow = firstDay.getDay(); // 0=Dom
+  if (startDow === 0) startDow = 7;
+  const startDate = new Date(firstDay);
+  startDate.setDate(firstDay.getDate() - (startDow - 1));
+  const grid = [];
+  const cur = new Date(startDate);
+  const lastDay = new Date(year, month + 1, 0);
+  while (cur <= lastDay || grid.length % 7 !== 0) {
+    grid.push(new Date(cur));
+    cur.setDate(cur.getDate() + 1);
+    if (grid.length >= 42) break;
+  }
+  return grid;
+}
 
 function getWeekDates(base) {
   const d=new Date(base), diff=d.getDay()===0?-6:1-d.getDay();
@@ -143,7 +173,7 @@ function LoginScreen({users, onLogin}) {
       <div style={{width:"100%",maxWidth:380}}>
         {/* Logo */}
         <div style={{textAlign:"center",marginBottom:32}}>
-          <div style={{width:56,height:56,borderRadius:16,background:"linear-gradient(135deg,#22c55e,#3b82f6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 12px"}}>🏟</div>
+          <div style={{width:56,height:56,borderRadius:16,background:"#1a1f2e",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px",padding:8}}><DamfieldLogo size={40}/></div>
           <div style={{fontSize:22,fontWeight:800,color:"#fff"}}>Damfield</div>
           <div style={{fontSize:12,color:"#475569",textTransform:"uppercase",letterSpacing:1.5,marginTop:2}}>Sistema de Alquileres</div>
         </div>
@@ -387,7 +417,7 @@ export default function App() {
       {/* ── HEADER ── */}
       <div style={{background:"#111520",borderBottom:"1px solid #1e2535",padding:"10px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <div style={{width:32,height:32,borderRadius:9,background:"linear-gradient(135deg,#22c55e,#3b82f6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🏟</div>
+          <div style={{width:32,height:32,borderRadius:9,background:"#1a1f2e",display:"flex",alignItems:"center",justifyContent:"center",padding:4}}><DamfieldLogo size={24}/></div>
           <div>
             <div style={{fontSize:14,fontWeight:800}}>Damfield</div>
             <div style={{fontSize:9,color:"#475569",textTransform:"uppercase",letterSpacing:1}}>Alquileres</div>
@@ -411,7 +441,8 @@ export default function App() {
         {/* Nav */}
         <div style={{display:"flex",background:"#1a1f2e",borderRadius:8,padding:3,border:"1px solid #1e2535",gap:2}}>
           {[
-            ["calendar","📅 Calendario"],
+            ["calendar","📅 Semana"],
+            ["mes","🗓 Mes"],
             ["list","📋 Lista"],
             ["clientes","👥 Clientes"],
             ...(canFinance?[["finanzas","💰 Finanzas"]]:[] ),
@@ -527,6 +558,72 @@ export default function App() {
           )}
         </div>
       )}
+
+      {/* ── MES ── */}
+      {view==="mes"&&(()=>{
+        const grid = getMonthGrid(currentDate);
+        const todayKey = dateKey(new Date());
+        const curMonth = currentDate.getMonth();
+        const curYear  = currentDate.getFullYear();
+        return(
+          <div style={{overflowX:"auto"}}>
+            {/* Nav mes */}
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px",borderBottom:"1px solid #1e2535",background:"#111520",position:"sticky",top:0,zIndex:10}}>
+              <button onClick={()=>{const d=new Date(currentDate);d.setMonth(d.getMonth()-1);setCurrentDate(d);}} style={navBtn}>‹</button>
+              <button onClick={()=>setCurrentDate(new Date())} style={{...navBtn,fontSize:11,padding:"3px 10px"}}>Hoy</button>
+              <button onClick={()=>{const d=new Date(currentDate);d.setMonth(d.getMonth()+1);setCurrentDate(d);}} style={navBtn}>›</button>
+              <span style={{fontSize:13,fontWeight:700,color:"#94a3b8",textTransform:"capitalize"}}>{currentDate.toLocaleDateString("es-AR",{month:"long",year:"numeric"})}</span>
+            </div>
+            <div style={{minWidth:700,padding:"0 8px 16px"}}>
+              {/* Cabecera días */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:2,marginTop:8}}>
+                {["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"].map(d=>(
+                  <div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:"#475569",textTransform:"uppercase",padding:"4px 0"}}>{d}</div>
+                ))}
+              </div>
+              {/* Grid */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+                {grid.map((date,i)=>{
+                  const dk = dateKey(date);
+                  const isToday = dk===todayKey;
+                  const isCurrentMonth = date.getMonth()===curMonth && date.getFullYear()===curYear;
+                  const dayBks = expanded.filter(b=>b.date===dk&&visibleSpaceIds.includes(b.space))
+                    .sort((a,b)=>a.startHour-b.startHour);
+                  const maxShow = 3;
+                  const extra = dayBks.length - maxShow;
+                  return(
+                    <div key={i} onClick={()=>{setCurrentDate(date);setView("calendar");}}
+                      style={{background:isToday?"#22c55e0d":"#111520",border:`1px solid ${isToday?"#22c55e44":"#1e2535"}`,borderRadius:8,minHeight:100,padding:"5px 6px",cursor:"pointer",opacity:isCurrentMonth?1:0.4,transition:"background 0.12s"}}
+                      onMouseEnter={e=>e.currentTarget.style.background=isToday?"#22c55e15":"#151c2c"}
+                      onMouseLeave={e=>e.currentTarget.style.background=isToday?"#22c55e0d":"#111520"}
+                    >
+                      {/* Número del día */}
+                      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:4}}>
+                        <div style={{width:22,height:22,borderRadius:"50%",background:isToday?"#22c55e":"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          <span style={{fontSize:12,fontWeight:isToday?800:600,color:isToday?"#000":isCurrentMonth?"#e2e8f0":"#475569"}}>{date.getDate()}</span>
+                        </div>
+                      </div>
+                      {/* Bookings */}
+                      {dayBks.slice(0,maxShow).map(bk=>{
+                        const sp=SPACES[bk.space];
+                        return(
+                          <div key={bk.id} onClick={e=>{e.stopPropagation();openEdit(bk);}}
+                            style={{background:bk.sinCargo?"#1e2535":`${sp.color}22`,borderLeft:`3px solid ${bk.sinCargo?"#2a3550":sp.color}`,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden"}}>
+                            <div style={{fontSize:10,fontWeight:700,color:bk.sinCargo?"#64748b":sp.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                              {bk.startHour}:00 {bk.sinCargo?`🎁 ${bk.sinCargoMotivo||"Sin cargo"}`:bk.clientName}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {extra>0&&<div style={{fontSize:9,color:"#64748b",marginTop:2}}>+{extra} más</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── LIST ── */}
       {view==="list"&&(
