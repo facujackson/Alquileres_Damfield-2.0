@@ -257,7 +257,8 @@ export default function App() {
   const [modal,          setModal]          = useState(false);
   const [editing,        setEditing]        = useState(null);
   const [form,           setForm]           = useState(EMPTY_FORM);
-  const [finPeriod,      setFinPeriod]      = useState("semana");
+  const [finPeriod,      setFinPeriod]      = useState("mes");
+  const [finDate,        setFinDate]        = useState(new Date());
   const [listFilter,     setListFilter]     = useState("all");
   const [clientModal,    setClientModal]    = useState(false);
   const [clientPicker,   setClientPicker]   = useState(false);
@@ -281,13 +282,17 @@ export default function App() {
       const [bk,cl,us] = await Promise.all([dbGet("bookings"),dbGet("clients"),dbGet("users")]);
       if(bk) setBookings(bk);
       if(cl) setClients(cl);
-      // Siempre forzar los default users con sus passwords originales
+      let resolvedUsers=DEFAULT_USERS;
       if(us && Array.isArray(us) && us.length > 0) {
         const extras = us.filter(u => !DEFAULT_USERS.find(d => d.id === u.id));
-        setUsers([...DEFAULT_USERS, ...extras]);
-      } else {
-        setUsers(DEFAULT_USERS);
+        resolvedUsers=[...DEFAULT_USERS, ...extras];
       }
+      setUsers(resolvedUsers);
+      // Auto-login desde sesión guardada
+      try {
+        const saved=localStorage.getItem("damfield_session");
+        if(saved){ const {id}=JSON.parse(saved); const u=resolvedUsers.find(x=>x.id===id); if(u) setCurrentUser(u); }
+      } catch {}
       setLoaded(true);
     }
     load();
@@ -407,16 +412,15 @@ export default function App() {
 
   // ── Finanzas ──
   const finData = useMemo(()=>{
-    const now=new Date();
     let filtered=expanded.filter(b=>!b.sinCargo);
     if(finPeriod==="semana"){
-      const wk=weekDates.map(d=>dateKey(d));
+      const wk=getWeekDates(finDate).map(d=>dateKey(d));
       filtered=filtered.filter(b=>wk.includes(b.date));
     } else if(finPeriod==="mes"){
-      const prefix=`${now.getFullYear()}-${pad(now.getMonth()+1)}`;
+      const prefix=`${finDate.getFullYear()}-${pad(finDate.getMonth()+1)}`;
       filtered=filtered.filter(b=>b.date.startsWith(prefix));
     } else if(finPeriod==="año"){
-      filtered=filtered.filter(b=>b.date.startsWith(String(now.getFullYear())));
+      filtered=filtered.filter(b=>b.date.startsWith(String(finDate.getFullYear())));
     }
     const total   =filtered.reduce((s,b)=>s+(Number(b.totalAmount)||0),0);
     const cobrado=filtered.reduce((s,b)=>s+getTotalPagado(b),0);
@@ -436,12 +440,12 @@ export default function App() {
       }
     });
     return {total,cobrado,pendiente:total-cobrado,bySpace,count:filtered.length,pending,filtered,byForma,FORMAS};
-  },[expanded,finPeriod,weekDates]);
+  },[expanded,finPeriod,finDate]);
 
   const conflict = form.date ? hasConflict(expanded,form.date,form.startHour,form.endHour,form.space,editing?.id) : false;
 
   if(!loaded) return <div style={{minHeight:"100vh",background:"#0b0e17",display:"flex",alignItems:"center",justifyContent:"center",color:"#475569",fontSize:14}}>Cargando…</div>;
-  if(!currentUser) return <LoginScreen users={users} onLogin={setCurrentUser}/>;
+  if(!currentUser) return <LoginScreen users={users} onLogin={u=>{localStorage.setItem("damfield_session",JSON.stringify({id:u.id}));setCurrentUser(u);}}/>;
 
   // ─── MAIN RENDER ────────────────────────────────────────────────────────────
   return (
@@ -498,7 +502,7 @@ export default function App() {
               {currentUser.role==="admin"?"Admin":currentUser.role==="vendedor"?"Vendedor":"Solo lectura"}
             </div>
           </div>
-          <button onClick={()=>setCurrentUser(null)} style={{background:"#1a1f2e",border:"1px solid #2a2f3e",color:"#64748b",borderRadius:8,padding:"5px 10px",cursor:"pointer",fontSize:11}}>Salir</button>
+          <button onClick={()=>{localStorage.removeItem("damfield_session");setCurrentUser(null);}} style={{background:"#1a1f2e",border:"1px solid #2a2f3e",color:"#64748b",borderRadius:8,padding:"5px 10px",cursor:"pointer",fontSize:11}}>Salir</button>
         </div>
 
         {canEdit&&(
@@ -746,10 +750,22 @@ export default function App() {
       {view==="finanzas"&&canFinance&&(
         <div style={{padding:16,maxWidth:900,margin:"0 auto"}}>
           <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap",alignItems:"center"}}>
+            {/* Tipo de período */}
             <div style={{display:"flex",background:"#111520",borderRadius:8,padding:3,border:"1px solid #1e2535"}}>
-              {[["semana","Esta semana"],["mes","Este mes"],["año","Este año"]].map(([v,l])=>(
-                <button key={v} onClick={()=>setFinPeriod(v)} style={{padding:"5px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,background:finPeriod===v?"#22c55e":"transparent",color:finPeriod===v?"#000":"#64748b"}}>{l}</button>
+              {[["semana","Semana"],["mes","Mes"],["año","Año"]].map(([v,l])=>(
+                <button key={v} onClick={()=>{setFinPeriod(v);setFinDate(new Date());}} style={{padding:"5px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,background:finPeriod===v?"#22c55e":"transparent",color:finPeriod===v?"#000":"#64748b"}}>{l}</button>
               ))}
+            </div>
+            {/* Navegación */}
+            <div style={{display:"flex",alignItems:"center",gap:6,background:"#111520",borderRadius:8,padding:"3px 6px",border:"1px solid #1e2535"}}>
+              <button onClick={()=>{const d=new Date(finDate);if(finPeriod==="semana")d.setDate(d.getDate()-7);else if(finPeriod==="mes")d.setMonth(d.getMonth()-1);else d.setFullYear(d.getFullYear()-1);setFinDate(d);}} style={navBtn}>‹</button>
+              <span style={{fontSize:12,fontWeight:700,color:"#94a3b8",minWidth:160,textAlign:"center"}}>
+                {finPeriod==="semana"&&(()=>{const wk=getWeekDates(finDate);return `${wk[0].getDate()} ${wk[0].toLocaleDateString("es-AR",{month:"short"})} – ${wk[6].getDate()} ${wk[6].toLocaleDateString("es-AR",{month:"short",year:"numeric"})}`;})()}
+                {finPeriod==="mes"&&finDate.toLocaleDateString("es-AR",{month:"long",year:"numeric"})}
+                {finPeriod==="año"&&String(finDate.getFullYear())}
+              </span>
+              <button onClick={()=>{const d=new Date(finDate);if(finPeriod==="semana")d.setDate(d.getDate()+7);else if(finPeriod==="mes")d.setMonth(d.getMonth()+1);else d.setFullYear(d.getFullYear()+1);setFinDate(d);}} style={navBtn}>›</button>
+              <button onClick={()=>setFinDate(new Date())} style={{...navBtn,fontSize:10,padding:"2px 8px"}}>Hoy</button>
             </div>
           </div>
 
