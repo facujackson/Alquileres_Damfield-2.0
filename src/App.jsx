@@ -130,23 +130,49 @@ function hasConflict(expanded,date,sh,eh,spaceId,excludeSeries){
     return false;
   });
 }
+function isPast(bk){
+  if(!bk.date||bk.endHour==null) return false;
+  return new Date(bk.date+"T"+pad(bk.endHour)+":00:00") < new Date();
+}
+function getTotalPagado(bk){
+  if(bk.sinCargo) return 0;
+  if(bk.pagos&&bk.pagos.length>0) return bk.pagos.reduce((s,p)=>s+(Number(p.monto)||0),0);
+  // backward compat
+  if(!bk.paymentType||bk.paymentType==="total"||bk.paymentType==="momento") return Number(bk.totalAmount)||0;
+  if(bk.paymentType==="seña_saldo") return bk.saldoPaid?Number(bk.totalAmount)||0:Number(bk.señaAmount)||0;
+  return 0;
+}
 function payLabel(bk){
-  if(bk.paymentType==="total") return "✓ Pagado";
-  if(bk.paymentType==="momento") return "En momento";
-  return bk.saldoPaid?"✓ Saldo OK":"⚠ Saldo pend.";
+  if(bk.sinCargo) return "Sin cargo";
+  const total=Number(bk.totalAmount)||0;
+  const pagado=getTotalPagado(bk);
+  const resta=total-pagado;
+  if(total===0) return "—";
+  if(resta<=0) return "✓ Pagado";
+  if(pagado>0) return `Resta ${fmtMoney(resta)}`;
+  return "⚠ Sin pago";
 }
 function payColors(bk){
-  if(bk.paymentType==="total"||(bk.paymentType==="seña_saldo"&&bk.saldoPaid)) return {bg:"#22c55e22",fg:"#22c55e"};
-  if(bk.paymentType==="momento") return {bg:"#3b82f622",fg:"#60a5fa"};
-  return {bg:"#f59e0b22",fg:"#f59e0b"};
+  const total=Number(bk.totalAmount)||0;
+  const pagado=getTotalPagado(bk);
+  const resta=total-pagado;
+  if(resta<=0&&total>0) return {bg:"#22c55e22",fg:"#22c55e"};
+  if(pagado>0) return {bg:"#f59e0b22",fg:"#f59e0b"};
+  return {bg:"#ef444422",fg:"#ef4444"};
 }
 
 const EMPTY_FORM={
   space:"futbol_11",date:"",startHour:18,endHour:19,
   clientId:"",clientName:"",clientPhone:"",clientEmail:"",clientOrg:"",
-  totalAmount:"",paymentType:"seña_saldo",señaAmount:"",saldoPaid:false,
+  totalAmount:"",señaAmount:"",
+  pagos:[],           // [{id,monto,fecha,nota}]
+  asistio:null,       // null | true | false
   sinCargo:false,sinCargoMotivo:"",notes:"",
   recurrence:"none",recurrenceCount:4,recurrenceUntil:"",
+  // backward compat (no se muestran pero se preservan)
+  paymentType:"seña_saldo",saldoPaid:false,
+  // transient UI state
+  newPagoMonto:"",newPagoFecha:"",
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -310,7 +336,10 @@ export default function App() {
     const master=bookings.find(b=>b.id===bk.seriesId||b.id===bk.id);
     if(!master) return;
     setEditing(master);
-    setForm({...master});
+    const pagos=master.pagos||[];
+    const pagado=pagos.reduce((s,p)=>s+(Number(p.monto)||0),0)||getTotalPagado({...master,pagos:[]});
+    const restanteInit=Math.max(0,(Number(master.totalAmount)||0)-pagado);
+    setForm({...master, pagos, asistio:master.asistio??null, newPagoMonto:restanteInit>0?String(restanteInit):"", newPagoFecha:""});
     setModal(true);
   }
   function save(){
@@ -387,21 +416,15 @@ export default function App() {
       filtered=filtered.filter(b=>b.date.startsWith(prefix));
     }
     const total   =filtered.reduce((s,b)=>s+(Number(b.totalAmount)||0),0);
-    const cobrado =filtered.reduce((s,b)=>{
-      if(b.paymentType==="total"||b.paymentType==="momento") return s+(Number(b.totalAmount)||0);
-      if(b.paymentType==="seña_saldo") return s+(b.saldoPaid?Number(b.totalAmount):Number(b.señaAmount)||0);
-      return s;
-    },0);
+    const cobrado=filtered.reduce((s,b)=>s+getTotalPagado(b),0);
     const bySpace={};
     filtered.forEach(b=>{
       if(!bySpace[b.space]) bySpace[b.space]={total:0,cobrado:0,count:0};
       bySpace[b.space].count++;
       bySpace[b.space].total+=Number(b.totalAmount)||0;
-      if(b.paymentType==="total"||b.paymentType==="momento") bySpace[b.space].cobrado+=Number(b.totalAmount)||0;
-      else if(b.paymentType==="seña_saldo") bySpace[b.space].cobrado+=b.saldoPaid?Number(b.totalAmount):Number(b.señaAmount)||0;
+      bySpace[b.space].cobrado+=getTotalPagado(b);
     });
-    // Pending list for vendedor
-    const pending=filtered.filter(b=>b.paymentType==="seña_saldo"&&!b.saldoPaid);
+    const pending=filtered.filter(b=>!b.sinCargo&&(Number(b.totalAmount)||0)-getTotalPagado(b)>0);
     return {total,cobrado,pendiente:total-cobrado,bySpace,count:filtered.length,pending,filtered};
   },[expanded,finPeriod,weekDates]);
 
@@ -541,7 +564,15 @@ export default function App() {
                                       {bk.sinCargo?`🎁 ${bk.sinCargoMotivo||"Sin cargo"}`:bk.clientName}
                                       {bk.recurrence&&bk.recurrence!="none"&&<span style={{marginLeft:3,fontSize:8,opacity:0.6}}>🔁</span>}
                                     </div>
-                                    {!bk.sinCargo&&bk.paymentType==="seña_saldo"&&!bk.saldoPaid&&<div style={{fontSize:8,color:"#f59e0b",fontWeight:700}}>⚠ SALDO</div>}
+                                    {!bk.sinCargo&&(()=>{
+                                      const resta=(Number(bk.totalAmount)||0)-getTotalPagado(bk);
+                                      if(resta>0&&Number(bk.totalAmount)>0) return <div style={{fontSize:8,color:"#f59e0b",fontWeight:700}}>⚠ {fmtMoney(resta)} restante</div>;
+                                      if(Number(bk.totalAmount)>0) return <div style={{fontSize:8,color:"#22c55e",fontWeight:700}}>✓ Pagado</div>;
+                                      return null;
+                                    })()}
+                                    {!bk.sinCargo&&isPast(bk)&&bk.asistio!==null&&(
+                                      <div style={{fontSize:8,fontWeight:700,color:bk.asistio?"#22c55e":"#ef4444"}}>{bk.asistio?"✓ asistió":"✗ no asistió"}</div>
+                                    )}
                                     <div style={{fontSize:8,color:"#334155",marginTop:1}}>{bk.createdBy||""}</div>
                                   </div>
                                 ))}
@@ -659,6 +690,7 @@ export default function App() {
                       <>
                         <div style={{fontSize:14,fontWeight:800,color:"#22c55e"}}>{fmtMoney(bk.totalAmount)}</div>
                         <div style={{fontSize:9,padding:"2px 8px",borderRadius:20,fontWeight:700,display:"inline-block",marginTop:2,background:pc.bg,color:pc.fg}}>{payLabel(bk)}</div>
+                        {isPast(bk)&&bk.asistio!==null&&<div style={{fontSize:9,fontWeight:700,marginTop:2,color:bk.asistio?"#22c55e":"#ef4444"}}>{bk.asistio?"✓ asistió":"✗ no asistió"}</div>}
                       </>
                     )}
                   </div>
@@ -741,10 +773,11 @@ export default function App() {
                   <div style={{flex:1}}>
                     <div style={{fontSize:13,fontWeight:700}}>{bk.clientName}</div>
                     <div style={{fontSize:11,color:"#a16207"}}>{SPACES[bk.space]?.label}</div>
+                    {isPast(bk)&&bk.asistio!==null&&<div style={{fontSize:10,fontWeight:700,marginTop:2,color:bk.asistio?"#22c55e":"#ef4444"}}>{bk.asistio?"✓ asistió":"✗ no asistió"}</div>}
                   </div>
                   <div style={{textAlign:"right"}}>
-                    <div style={{fontSize:12,color:"#a16207"}}>Seña: {fmtMoney(bk.señaAmount)}</div>
-                    <div style={{fontSize:14,fontWeight:800,color:"#f59e0b"}}>Saldo: {fmtMoney((Number(bk.totalAmount)||0)-(Number(bk.señaAmount)||0))}</div>
+                    <div style={{fontSize:12,color:"#a16207"}}>Cobrado: {fmtMoney(getTotalPagado(bk))}</div>
+                    <div style={{fontSize:14,fontWeight:800,color:"#f59e0b"}}>Resta: {fmtMoney((Number(bk.totalAmount)||0)-getTotalPagado(bk))}</div>
                   </div>
                 </div>
               ))}
@@ -905,16 +938,95 @@ export default function App() {
                 )}
                 <div style={{borderTop:"1px solid #1e2535",margin:"10px 0"}}/>
                 <div style={{fontSize:9,color:"#475569",textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Pago</div>
+
+                {/* Montos base */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <FG label="Monto total ($)"><input type="number" value={form.totalAmount} onChange={e=>setForm(f=>({...f,totalAmount:e.target.value}))} placeholder="121000" style={inpSt}/></FG>
-                  <FG label="Tipo"><select value={form.paymentType} onChange={e=>setForm(f=>({...f,paymentType:e.target.value}))} style={inpSt}><option value="seña_saldo">Seña + Saldo</option><option value="total">Total anticipado</option><option value="momento">En el momento</option></select></FG>
+                  <FG label="Total ($)"><input type="number" value={form.totalAmount} onChange={e=>setForm(f=>({...f,totalAmount:e.target.value}))} placeholder="121000" style={inpSt}/></FG>
+                  <FG label="Seña acordada ($)"><input type="number" value={form.señaAmount} onChange={e=>setForm(f=>({...f,señaAmount:e.target.value}))} placeholder="40000" style={inpSt}/></FG>
                 </div>
-                {form.paymentType==="seña_saldo"&&(
-                  <>
-                    <FG label="Seña ($)"><input type="number" value={form.señaAmount} onChange={e=>setForm(f=>({...f,señaAmount:e.target.value}))} placeholder="40000" style={inpSt}/></FG>
-                    <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",marginBottom:10}}><input type="checkbox" checked={form.saldoPaid} onChange={e=>setForm(f=>({...f,saldoPaid:e.target.checked}))} style={{accentColor:"#22c55e"}}/><span style={{fontSize:12,color:"#94a3b8"}}>Saldo cobrado ✓</span></label>
-                  </>
+
+                {/* Saldo calculado */}
+                {Number(form.totalAmount)>0&&Number(form.señaAmount)>0&&(
+                  <div style={{background:"#1a1f2e",borderRadius:8,padding:"8px 12px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontSize:11,color:"#64748b"}}>Saldo a cobrar el día del partido</span>
+                    <span style={{fontSize:14,fontWeight:800,color:"#60a5fa"}}>{fmtMoney(Number(form.totalAmount)-Number(form.señaAmount))}</span>
+                  </div>
                 )}
+
+                {/* Pagos recibidos */}
+                {(()=>{
+                  const pagos=form.pagos||[];
+                  const total=Number(form.totalAmount)||0;
+                  const totalPagado=pagos.reduce((s,p)=>s+(Number(p.monto)||0),0);
+                  const restante=total-totalPagado;
+                  return(
+                    <>
+                      {pagos.length>0&&(
+                        <div style={{marginBottom:10}}>
+                          <div style={{fontSize:9,color:"#475569",textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Pagos registrados</div>
+                          {pagos.map(p=>(
+                            <div key={p.id} style={{display:"flex",alignItems:"center",gap:8,background:"#1a1f2e",borderRadius:7,padding:"6px 10px",marginBottom:4}}>
+                              <span style={{fontSize:10,color:"#64748b",minWidth:34}}>{p.fecha?new Date(p.fecha+"T12:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—"}</span>
+                              <span style={{fontSize:13,fontWeight:700,color:"#22c55e",flex:1}}>{fmtMoney(p.monto)}</span>
+                              {p.nota&&<span style={{fontSize:10,color:"#475569"}}>{p.nota}</span>}
+                              {canEdit&&<button onClick={()=>setForm(f=>({...f,pagos:f.pagos.filter(x=>x.id!==p.id)}))} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:15,padding:0,lineHeight:1}}>×</button>}
+                            </div>
+                          ))}
+                          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 10px",borderTop:"1px solid #1e2535",marginTop:2}}>
+                            <span style={{fontSize:11,color:"#64748b"}}>Total cobrado</span>
+                            <span style={{fontSize:13,fontWeight:700,color:"#22c55e"}}>{fmtMoney(totalPagado)}</span>
+                          </div>
+                          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 10px",background:restante>0?"#f59e0b12":"#22c55e12",borderRadius:7,marginTop:4,border:`1px solid ${restante>0?"#f59e0b33":"#22c55e33"}`}}>
+                            <span style={{fontSize:12,fontWeight:700,color:restante>0?"#f59e0b":"#22c55e"}}>{restante>0?"⚠ Saldo restante":"✓ Pagado completo"}</span>
+                            {restante>0&&<span style={{fontSize:13,fontWeight:800,color:"#f59e0b"}}>{fmtMoney(restante)}</span>}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Agregar pago */}
+                      {canEdit&&(
+                        <div style={{background:"#1a1f2e",borderRadius:10,padding:"12px",marginBottom:10,border:"1px dashed #2a3550"}}>
+                          <div style={{fontSize:9,color:"#60a5fa",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>+ Registrar pago recibido</div>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                            <FG label="Monto ($)"><input type="number" value={form.newPagoMonto} onChange={e=>setForm(f=>({...f,newPagoMonto:e.target.value}))} placeholder={restante>0?String(restante):"0"} style={inpSt}/></FG>
+                            <FG label="Fecha"><input type="date" value={form.newPagoFecha||dateKey(new Date())} onChange={e=>setForm(f=>({...f,newPagoFecha:e.target.value}))} style={inpSt}/></FG>
+                          </div>
+                          <button onClick={()=>{
+                            if(!form.newPagoMonto) return;
+                            const p={id:"p_"+Date.now(),monto:Number(form.newPagoMonto),fecha:form.newPagoFecha||dateKey(new Date()),nota:""};
+                            const newPagos=[...(form.pagos||[]),p];
+                            const updatedForm={...form,pagos:newPagos,newPagoMonto:"",newPagoFecha:""};
+                            setForm(updatedForm);
+                            // Guarda inmediatamente si es una reserva existente
+                            if(editing){
+                              const existing=bookings.find(b=>b.id===editing.id);
+                              const entry={...updatedForm,id:editing.id,...audit(existing)};
+                              setBookings(prev=>prev.map(b=>b.id===editing.id?entry:b));
+                            }
+                          }} style={{width:"100%",padding:"8px",borderRadius:8,border:"none",background:form.newPagoMonto?"linear-gradient(135deg,#22c55e,#16a34a)":"#1e2535",color:form.newPagoMonto?"#000":"#475569",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                            Registrar pago
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </>
+            )}
+
+            {/* Asistencia — solo si ya pasó la fecha/hora */}
+            {editing&&!form.sinCargo&&isPast({date:form.date,endHour:form.endHour})&&(
+              <>
+                <div style={{borderTop:"1px solid #1e2535",margin:"10px 0"}}/>
+                <div style={{fontSize:9,color:"#475569",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Asistencia</div>
+                <div style={{display:"flex",gap:8,marginBottom:12}}>
+                  <button onClick={()=>setForm(f=>({...f,asistio:f.asistio===true?null:true}))} style={{flex:1,padding:"10px",borderRadius:8,border:`2px solid ${form.asistio===true?"#22c55e":"#2a2f3e"}`,background:form.asistio===true?"#22c55e22":"transparent",color:form.asistio===true?"#22c55e":"#64748b",cursor:"pointer",fontWeight:700,fontSize:13,transition:"all 0.15s"}}>
+                    ✓ Asistió
+                  </button>
+                  <button onClick={()=>setForm(f=>({...f,asistio:f.asistio===false?null:false}))} style={{flex:1,padding:"10px",borderRadius:8,border:`2px solid ${form.asistio===false?"#ef4444":"#2a2f3e"}`,background:form.asistio===false?"#ef444422":"transparent",color:form.asistio===false?"#ef4444":"#64748b",cursor:"pointer",fontWeight:700,fontSize:13,transition:"all 0.15s"}}>
+                    ✗ No asistió
+                  </button>
+                </div>
               </>
             )}
 
@@ -994,9 +1106,12 @@ export default function App() {
                   <div style={{fontSize:10,color:"#475569",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Historial ({hist.length})</div>
                   <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:140,overflowY:"auto"}}>
                     {hist.map(bk=>(
-                      <div key={bk.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#64748b",background:"#1a1f2e",borderRadius:6,padding:"4px 8px"}}>
+                      <div key={bk.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:"#64748b",background:"#1a1f2e",borderRadius:6,padding:"4px 8px"}}>
                         <span>{new Date(bk.date+"T12:00").toLocaleDateString("es-AR",{weekday:"short",day:"2-digit",month:"2-digit"})} · {SPACES[bk.space]?.short} · {bk.startHour}:00–{bk.endHour}:00</span>
-                        <span style={{color:"#22c55e",fontWeight:700}}>{bk.sinCargo?"SC":fmtMoney(bk.totalAmount)}</span>
+                        <div style={{display:"flex",alignItems:"center",gap:6}}>
+                          {isPast(bk)&&bk.asistio!==null&&<span style={{fontSize:9,fontWeight:700,color:bk.asistio?"#22c55e":"#ef4444"}}>{bk.asistio?"✓":"✗"}</span>}
+                          <span style={{color:"#22c55e",fontWeight:700}}>{bk.sinCargo?"SC":fmtMoney(bk.totalAmount)}</span>
+                        </div>
                       </div>
                     ))}
                   </div>
