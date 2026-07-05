@@ -283,6 +283,188 @@ function LoginScreen({users, onLogin}) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// BOTTOM SHEET MOBILE
+// ═══════════════════════════════════════════════════════════════════════════════
+function BookingBottomSheet({ form, setForm, editing, onSave, onClose, onDelete,
+  clients, conflict, canEdit, isAdmin, SPACES, ALL_HOURS,
+  clientPicker, setClientPicker, fmtMoney, getNetAmount, getTotalPagado, dateKey,
+  pad, isPast }) {
+
+  const [step, setStep] = useState(editing?.clientId ? 2 : 0);
+  const steps = form.isBloqueo
+    ? [{ label: '🚫 Bloqueo' }]
+    : [{ label: '📅 Reserva' }, { label: '👤 Cliente' }, { label: '💰 Cobro' }];
+
+  const inpMob = { width:'100%', background:'#0b0e17', border:'1px solid #2a2f3e', borderRadius:10, padding:'12px 14px', color:'#e2e8f0', fontSize:14, boxSizing:'border-box' };
+  const lblMob = { fontSize:10, color:'#64748b', textTransform:'uppercase', letterSpacing:0.5, display:'block', marginBottom:4 };
+
+  return (
+    <>
+      <div style={{position:'fixed',inset:0,background:'#000000a0',zIndex:100}} onClick={onClose}/>
+      <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:101,background:'#111520',borderRadius:'20px 20px 0 0',border:'1px solid #2a2f3e',borderBottom:'none',maxHeight:'92vh',overflowY:'auto',padding:'0 16px 32px'}}>
+        {/* Handle */}
+        <div style={{display:'flex',justifyContent:'center',padding:'12px 0 8px'}}>
+          <div style={{width:36,height:4,background:'#2a2f3e',borderRadius:2}}/>
+        </div>
+        {/* Header */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+          <div style={{fontSize:16,fontWeight:800}}>{editing?'Editar alquiler':'Nuevo alquiler'}</div>
+          <button onClick={onClose} style={{background:'none',border:'none',color:'#64748b',fontSize:22,cursor:'pointer'}}>×</button>
+        </div>
+        {/* Progress bar */}
+        {!form.isBloqueo&&(
+          <div style={{display:'flex',gap:4,marginBottom:20}}>
+            {steps.map((s,i)=>(
+              <div key={i} onClick={()=>setStep(i)} style={{flex:1,height:4,borderRadius:2,cursor:'pointer',background:i<=step?'#22c55e':'#2a2f3e',transition:'background 0.2s'}}/>
+            ))}
+          </div>
+        )}
+        {/* Tipo toggle */}
+        <div style={{display:'flex',gap:6,marginBottom:16}}>
+          {[{v:false,l:'📅 Alquiler'},{v:true,l:'🚫 Bloquear'}].map(({v,l})=>(
+            <button key={String(v)} onClick={()=>{setForm(f=>({...f,isBloqueo:v}));setStep(0);}} style={{flex:1,padding:12,borderRadius:10,border:`2px solid ${form.isBloqueo===v?(v?'#ef4444':'#22c55e'):'#2a2f3e'}`,background:form.isBloqueo===v?(v?'#ef444418':'#22c55e18'):'transparent',color:form.isBloqueo===v?(v?'#ef4444':'#22c55e'):'#64748b',cursor:'pointer',fontWeight:700,fontSize:13}}>{l}</button>
+          ))}
+        </div>
+
+        {/* ── STEP 0 / BLOQUEO ── */}
+        {(step===0||form.isBloqueo)&&(
+          <div>
+            {form.isBloqueo&&(
+              <div style={{marginBottom:12}}>
+                <label style={lblMob}>Motivo *</label>
+                <input value={form.bloqueoMotivo||''} onChange={e=>setForm(f=>({...f,bloqueoMotivo:e.target.value}))} placeholder="Academia, Torneo…" style={inpMob}/>
+              </div>
+            )}
+            <div style={{marginBottom:12}}>
+              <label style={lblMob}>Espacio</label>
+              <select value={form.space} onChange={e=>{const sp=SPACES[e.target.value];setForm(f=>({...f,space:e.target.value,totalAmount:sp.price!=null?sp.price:f.totalAmount}));}} style={inpMob}>
+                {Object.values(SPACES).map(s=><option key={s.id} value={s.id}>{s.label}{s.price?` — ${fmtMoney(s.price)}`:' — a convenir'}</option>)}
+              </select>
+            </div>
+            <div style={{marginBottom:12}}>
+              <label style={lblMob}>Fecha</label>
+              <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={inpMob}/>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+              {[{label:'Desde',key:'startHour'},{label:'Hasta',key:'endHour'}].map(({label,key})=>(
+                <div key={key}>
+                  <label style={lblMob}>{label}</label>
+                  <select value={form[key]} onChange={e=>{const val=+e.target.value;setForm(f=>key==='startHour'?{...f,startHour:val,endHour:Math.max(val+1,f.endHour)}:{...f,endHour:val});}} style={{...inpMob,fontSize:15,fontWeight:700}}>
+                    {ALL_HOURS.filter(h=>key==='endHour'?h>form.startHour:true).map(h=><option key={h} value={h}>{pad(h)}:00</option>)}
+                    {key==='endHour'&&<option value={23}>23:00</option>}
+                  </select>
+                </div>
+              ))}
+            </div>
+            {conflict&&<div style={{background:'#ef444415',border:'1px solid #ef4444',borderRadius:8,padding:'10px 14px',fontSize:13,color:'#ef4444',marginBottom:12}}>⚠️ Conflicto de horario con otra reserva o cancha relacionada.</div>}
+            <div style={{background:'#1a1f2e',borderRadius:10,padding:14,marginBottom:16,border:'1px solid #2a2f3e'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:10}}>🔁 Repetición semanal</div>
+              <div style={{display:'flex',gap:6}}>
+                {[['none','No repetir'],['count','N semanas'],['until','Hasta fecha']].map(([v,l])=>(
+                  <button key={v} onClick={()=>setForm(f=>({...f,recurrence:v}))} style={{flex:1,padding:'8px 4px',borderRadius:8,border:'1px solid',fontSize:11,cursor:'pointer',borderColor:form.recurrence===v?'#3b82f6':'#2a2f3e',background:form.recurrence===v?'#3b82f622':'transparent',color:form.recurrence===v?'#60a5fa':'#64748b'}}>{l}</button>
+                ))}
+              </div>
+              {form.recurrence==='count'&&<div style={{marginTop:10,display:'flex',alignItems:'center',gap:10}}><span style={{fontSize:12,color:'#64748b'}}>Semanas:</span><input type="number" min={1} max={52} value={form.recurrenceCount} onChange={e=>setForm(f=>({...f,recurrenceCount:+e.target.value}))} style={{width:60,background:'#0b0e17',border:'1px solid #2a2f3e',borderRadius:8,padding:'8px',color:'#e2e8f0',fontSize:14}}/></div>}
+              {form.recurrence==='until'&&<input type="date" value={form.recurrenceUntil} onChange={e=>setForm(f=>({...f,recurrenceUntil:e.target.value}))} style={{marginTop:10,width:'100%',background:'#0b0e17',border:'1px solid #2a2f3e',borderRadius:8,padding:'10px',color:'#e2e8f0',fontSize:14,boxSizing:'border-box'}}/>}
+            </div>
+            <button onClick={form.isBloqueo?onSave:()=>setStep(1)} disabled={form.isBloqueo&&!(form.bloqueoMotivo||'').trim()} style={{width:'100%',padding:14,borderRadius:12,border:'none',fontSize:15,fontWeight:700,cursor:'pointer',background:'linear-gradient(135deg,#22c55e,#16a34a)',color:'#000'}}>
+              {form.isBloqueo?'Bloquear espacio':'Siguiente →'}
+            </button>
+          </div>
+        )}
+
+        {/* ── STEP 1: Cliente ── */}
+        {!form.isBloqueo&&step===1&&(
+          <div>
+            <label style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,cursor:'pointer',background:form.sinCargo?'#22c55e0d':'#1a1f2e',padding:'12px 14px',borderRadius:10,border:`1px solid ${form.sinCargo?'#22c55e44':'#2a2f3e'}`}}>
+              <input type="checkbox" checked={form.sinCargo} onChange={e=>setForm(f=>({...f,sinCargo:e.target.checked}))} style={{width:18,height:18,accentColor:'#22c55e'}}/>
+              <div><div style={{fontSize:14,fontWeight:700,color:form.sinCargo?'#22c55e':'#94a3b8'}}>🎁 Sin cargo</div><div style={{fontSize:11,color:'#475569'}}>Cortesía, uso interno…</div></div>
+            </label>
+            {form.sinCargo?(
+              <input value={form.sinCargoMotivo||''} onChange={e=>setForm(f=>({...f,sinCargoMotivo:e.target.value}))} placeholder="Motivo del sin cargo *" style={{...inpMob,marginBottom:14}}/>
+            ):(
+              <>
+                {form.clientName?(
+                  <div style={{display:'flex',alignItems:'center',gap:8,background:'#1a1f2e',borderRadius:10,padding:'12px 14px',border:'1px solid #2a2f3e',marginBottom:14}}>
+                    <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{form.clientName}</div>{form.clientOrg&&<div style={{fontSize:12,color:'#64748b'}}>{form.clientOrg}</div>}</div>
+                    <button onClick={()=>setForm(f=>({...f,clientId:'',clientName:'',clientPhone:'',clientEmail:'',clientOrg:''}))} style={{background:'none',border:'none',color:'#64748b',cursor:'pointer',fontSize:20}}>×</button>
+                  </div>
+                ):(
+                  <button onClick={()=>setClientPicker(true)} style={{width:'100%',padding:'14px',borderRadius:10,border:'2px dashed #2a2f3e',background:'transparent',color:'#64748b',cursor:'pointer',fontSize:14,marginBottom:14}}>👥 Elegir cliente existente…</button>
+                )}
+                {!form.clientId&&(
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+                    {[{key:'clientName',label:'Nombre *',ph:'Juan García'},{key:'clientPhone',label:'WhatsApp',ph:'+54 9 341…'},{key:'clientEmail',label:'Email',ph:'email@…'},{key:'clientOrg',label:'Empresa / Club',ph:'Org…'}].map(({key,label,ph})=>(
+                      <div key={key}><label style={lblMob}>{label}</label><input value={form[key]} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))} placeholder={ph} style={{...inpMob,fontSize:13,padding:'11px 12px'}}/></div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={()=>setStep(0)} style={{flex:1,padding:14,borderRadius:12,border:'1px solid #2a2f3e',background:'transparent',color:'#94a3b8',cursor:'pointer',fontSize:14,fontWeight:700}}>← Atrás</button>
+              <button onClick={()=>setStep(2)} disabled={!form.sinCargo&&!form.clientName} style={{flex:2,padding:14,borderRadius:12,border:'none',fontSize:15,fontWeight:700,cursor:'pointer',background:(!form.sinCargo&&!form.clientName)?'#1e2535':'linear-gradient(135deg,#22c55e,#16a34a)',color:(!form.sinCargo&&!form.clientName)?'#475569':'#000'}}>
+                {form.sinCargo?'Guardar →':'Siguiente →'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 2: Cobro ── */}
+        {!form.isBloqueo&&step===2&&(
+          <div>
+            {!form.sinCargo&&(
+              <>
+                <div style={{marginBottom:12}}>
+                  <label style={lblMob}>Total ($)</label>
+                  <input type="number" value={form.totalAmount} onChange={e=>setForm(f=>({...f,totalAmount:e.target.value}))} placeholder="121000" style={{...inpMob,fontSize:16,fontWeight:700}}/>
+                </div>
+                <div style={{marginBottom:14}}>
+                  <label style={lblMob}>Forma de pago</label>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                    {[['efectivo','💵 Efectivo'],['transferencia','🏦 Transferencia'],['debito','💳 Débito'],['credito','💳 Crédito'],['cuentacorriente','📒 Cta. Cte.']].map(([v,l])=>(
+                      <button key={v} onClick={()=>setForm(f=>({...f,newPagoForma:v}))} style={{padding:'12px 8px',borderRadius:10,border:'1px solid',fontSize:13,cursor:'pointer',fontWeight:600,borderColor:(form.newPagoForma||'efectivo')===v?'#60a5fa':'#2a2f3e',background:(form.newPagoForma||'efectivo')===v?'#60a5fa22':'#1a1f2e',color:(form.newPagoForma||'efectivo')===v?'#60a5fa':'#64748b'}}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{marginBottom:16}}>
+                  <label style={lblMob}>Monto a cobrar ahora</label>
+                  <input type="number" value={form.newPagoMonto} onChange={e=>setForm(f=>({...f,newPagoMonto:e.target.value}))} placeholder={form.totalAmount||'0'} style={{...inpMob,fontSize:16,fontWeight:700}}/>
+                </div>
+                {(form.pagos||[]).length>0&&(
+                  <div style={{background:'#1a1f2e',borderRadius:10,padding:12,marginBottom:14}}>
+                    <div style={{fontSize:10,color:'#475569',textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>Pagos registrados</div>
+                    {(form.pagos||[]).map(p=>(
+                      <div key={p.id} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                        <span style={{fontSize:13,fontWeight:700,color:'#22c55e',flex:1}}>{fmtMoney(p.monto)}</span>
+                        <span style={{fontSize:11,color:'#64748b'}}>{{efectivo:'💵',transferencia:'🏦',debito:'💳',credito:'💳',cuentacorriente:'📒'}[p.forma]||''} {p.forma}</span>
+                      </div>
+                    ))}
+                    <div style={{borderTop:'1px solid #1e2535',marginTop:6,paddingTop:6,display:'flex',justifyContent:'space-between'}}>
+                      <span style={{fontSize:11,color:'#64748b'}}>Restante</span>
+                      <span style={{fontSize:13,fontWeight:700,color:'#f59e0b'}}>{fmtMoney(Math.max(0,getNetAmount(form)-getTotalPagado(form)))}</span>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={()=>setStep(1)} style={{flex:1,padding:14,borderRadius:12,border:'1px solid #2a2f3e',background:'transparent',color:'#94a3b8',cursor:'pointer',fontSize:14,fontWeight:700}}>← Atrás</button>
+              <button onClick={onSave} disabled={!form.date||(!form.isBloqueo&&!form.sinCargo&&!form.clientName)} style={{flex:2,padding:14,borderRadius:12,border:'none',fontSize:15,fontWeight:700,cursor:'pointer',background:'linear-gradient(135deg,#22c55e,#16a34a)',color:'#000'}}>
+                {editing?'✓ Guardar cambios':'✓ Confirmar reserva'}
+              </button>
+            </div>
+            {editing&&isAdmin&&(
+              <button onClick={onDelete} style={{width:'100%',marginTop:10,padding:'12px',borderRadius:12,border:'1px solid #ef444444',background:'#ef444410',color:'#ef4444',cursor:'pointer',fontSize:13,fontWeight:700}}>Eliminar reserva</button>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function App() {
@@ -1237,7 +1419,17 @@ export default function App() {
       })()}
 
       {/* ── MODAL ALQUILER ── */}
-      {modal&&(
+      {modal&&(isMobile?(
+        <BookingBottomSheet
+          form={form} setForm={setForm} editing={editing}
+          onSave={save} onClose={()=>setModal(false)} onDelete={()=>del(editing?.id)}
+          clients={clients} conflict={conflict} canEdit={canEdit} isAdmin={isAdmin}
+          SPACES={SPACES} ALL_HOURS={ALL_HOURS} fmtMoney={fmtMoney}
+          getNetAmount={getNetAmount} getTotalPagado={getTotalPagado}
+          dateKey={dateKey} pad={pad} isPast={isPast}
+          clientPicker={clientPicker} setClientPicker={setClientPicker}
+        />
+      ):(
         <div style={{position:"fixed",inset:0,background:"#000000d0",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16}}
           onClick={e=>e.target===e.currentTarget&&setModal(false)}>
           <div style={{background:"#111520",border:"1px solid #2a2f3e",borderRadius:16,width:"100%",maxWidth:520,maxHeight:"92vh",overflowY:"auto",padding:22}}>
@@ -1518,7 +1710,7 @@ export default function App() {
             })()}
           </div>
         </div>
-      )}
+      ))}
 
       {/* ── AUDIT MODAL ── */}
       {auditModal&&(
