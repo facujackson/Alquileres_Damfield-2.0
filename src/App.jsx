@@ -50,6 +50,17 @@ const ALL_HOURS    = Array.from({length:18},(_,i)=>i+6);
 const DEFAULT_HOURS= [18,19,20,21,22];
 const DAYS         = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
 
+// ─── DETECCIÓN MOBILE ────────────────────────────────────────────────────────
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return isMobile;
+}
+
 // ─── LOGO SVG ────────────────────────────────────────────────────────────────
 function DamfieldLogo({ size = 32 }) {
   return (
@@ -275,6 +286,7 @@ function LoginScreen({users, onLogin}) {
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function App() {
+  const isMobile = useIsMobile();
   const [currentUser, setCurrentUser] = useState(null);
   const [users,    setUsers]    = useState(DEFAULT_USERS);
   const [bookings, setBookings] = useState([]);
@@ -304,16 +316,27 @@ export default function App() {
   const [listTimeRange,  setListTimeRange]  = useState("proximos"); // "todos"|"proximos"|"pasados"|"semana"|"mes"|"año"
   const [listTimeDate,   setListTimeDate]   = useState(new Date());
   const [listShowBloqueos,setListShowBloqueos]=useState(false);
+  const [listClientSearch,setListClientSearch]=useState('');
+  // Multi-booking cell picker (non-modal)
+  const [cellPicker,setCellPicker]=useState(null); // {bks,x,y,spaceId,date,hour}
   // Clientes filters
   const [clientListSearch,setClientListSearch]=useState("");
   const [clientFilter,   setClientFilter]   = useState("all"); // "all"|"incompletos"
   const [clientSort,     setClientSort]     = useState("count_desc");
   const [clientSpaceFilter,setClientSpaceFilter]=useState("all");
+  const [toast,          setToast]          = useState(null); // { msg, type } donde type = 'success' | 'error'
+  const [confirmModal,   setConfirmModal]   = useState(null); // { title, body, onConfirm, danger }
+  const [modalTab,       setModalTab]       = useState('reserva'); // 'reserva' | 'cliente' | 'cobro'
 
   const isAdmin    = currentUser?.role==="admin";
   const isReadonly = currentUser?.role==="readonly";
   const canEdit    = currentUser?.role==="admin"||currentUser?.role==="vendedor";
   const canFinance = currentUser?.role==="admin"||currentUser?.role==="vendedor";
+
+  function showToast(msg, type = 'success') {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 2200);
+  }
 
   // ── Load from storage ──
   useEffect(()=>{
@@ -375,6 +398,7 @@ export default function App() {
     setEditing(null);
     const price=SPACES[spaceId]?.price;
     setForm({...EMPTY_FORM,space:spaceId,date:typeof date==="string"?date:dateKey(date),startHour:hour,endHour:Math.min(hour+1,23),totalAmount:price??""});
+    setModalTab('reserva');
     setModal(true);
   }
   function openEdit(bk){
@@ -390,6 +414,7 @@ export default function App() {
       sinCargo:master.sinCargo||false, sinCargoMotivo:master.sinCargoMotivo||"",
       notes:master.notes||"",
       newPagoMonto:restanteInit>0?String(restanteInit):"", newPagoFecha:"", newPagoForma:""});
+    setModalTab(master.clientId ? 'cobro' : 'reserva');
     setModal(true);
   }
   function save(){
@@ -417,13 +442,25 @@ export default function App() {
       setBookings(p=>[...p,entry]);
     }
     setModal(false);
+    showToast(editing ? '✓ Reserva actualizada' : '✓ Reserva creada');
   }
   function del(id){
     if(!isAdmin){ alert("Solo el administrador puede eliminar."); return; }
-    if(confirm("¿Eliminar este alquiler?")){
-      setBookings(p=>p.filter(b=>b.id!==id));
-      setModal(false);
-    }
+    const bk=bookings.find(b=>b.id===id);
+    const label=bk?.isBloqueo
+      ? `Bloqueo: ${bk.bloqueoMotivo||'sin motivo'}`
+      : `${bk?.clientName||'Reserva sin nombre'} · ${bk?.date} ${bk?.startHour}:00–${bk?.endHour}:00`;
+    setConfirmModal({
+      title:'¿Eliminar reserva?',
+      body: label,
+      danger:true,
+      onConfirm:()=>{
+        setBookings(p=>p.filter(b=>b.id!==id));
+        setModal(false);
+        setConfirmModal(null);
+        showToast('Reserva eliminada','error');
+      },
+    });
   }
 
   // ── Client ops ──
@@ -437,6 +474,7 @@ export default function App() {
     if(editingClient) setClients(p=>p.map(c=>c.id===editingClient.id?{...c,...clientForm}:c));
     else setClients(p=>[...p,{id:"c_"+Date.now(),...clientForm}]);
     setClientModal(false);
+    showToast(editingClient ? '✓ Cliente actualizado' : '✓ Cliente creado');
   }
   function pickClient(c){
     setForm(f=>({...f,clientId:c.id,clientName:c.name,clientPhone:c.phone,clientEmail:c.email,clientOrg:c.org}));
@@ -453,7 +491,17 @@ export default function App() {
   }
   function delUser(id){
     if(id===currentUser?.id){alert("No podés eliminar tu propio usuario.");return;}
-    if(confirm("¿Eliminar usuario?")) setUsers(p=>p.filter(u=>u.id!==id));
+    const u=users.find(x=>x.id===id);
+    setConfirmModal({
+      title:'¿Eliminar usuario?',
+      body:`${u?.name} (@${u?.username})`,
+      danger:true,
+      onConfirm:()=>{
+        setUsers(p=>p.filter(x=>x.id!==id));
+        setConfirmModal(null);
+        showToast('Usuario eliminado','error');
+      },
+    });
   }
 
   // ── Finanzas ──
@@ -507,18 +555,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Group filters */}
-        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-          {SPACE_GROUPS.map(({label,g})=>(
-            <button key={g} onClick={()=>toggleGroup(g)} style={{
-              padding:"3px 10px",borderRadius:20,border:"1px solid",fontSize:11,fontWeight:600,cursor:"pointer",transition:"all 0.15s",
-              borderColor:visibleGroups.includes(g)?groupColor(g):"#2a2f3e",
-              background:visibleGroups.includes(g)?`${groupColor(g)}1a`:"transparent",
-              color:visibleGroups.includes(g)?groupColor(g):"#475569",
-            }}>{label}</button>
-          ))}
-        </div>
-
         <div style={{flex:1}}/>
 
         {/* Nav */}
@@ -562,11 +598,20 @@ export default function App() {
       {/* ── CALENDAR ── */}
       {view==="calendar"&&(
         <div style={{overflowX:"auto"}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px",borderBottom:"1px solid #1e2535",background:"#111520",position:"sticky",top:0,zIndex:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px",borderBottom:"1px solid #1e2535",background:"#111520",position:"sticky",top:0,zIndex:10,flexWrap:"wrap"}}>
             <button onClick={()=>{const d=new Date(currentDate);d.setDate(d.getDate()-7);setCurrentDate(d);}} style={navBtn}>‹</button>
             <button onClick={()=>setCurrentDate(new Date())} style={{...navBtn,fontSize:11,padding:"3px 10px"}}>Hoy</button>
             <button onClick={()=>{const d=new Date(currentDate);d.setDate(d.getDate()+7);setCurrentDate(d);}} style={navBtn}>›</button>
             <span style={{fontSize:12,fontWeight:600,color:"#94a3b8",textTransform:"capitalize"}}>{fmtMonthYear(weekDates[0])}</span>
+            <div style={{width:1,height:20,background:"#2a2f3e",margin:"0 4px"}}/>
+            {SPACE_GROUPS.map(({label,g})=>(
+              <button key={g} onClick={()=>toggleGroup(g)} style={{
+                padding:"3px 10px",borderRadius:20,border:"1px solid",fontSize:11,fontWeight:600,cursor:"pointer",transition:"all 0.15s",
+                borderColor:visibleGroups.includes(g)?groupColor(g):"#2a2f3e",
+                background:visibleGroups.includes(g)?`${groupColor(g)}1a`:"transparent",
+                color:visibleGroups.includes(g)?groupColor(g):"#475569",
+              }}>{label}</button>
+            ))}
           </div>
           {visibleSpaceIds.length===0?(
             <div style={{textAlign:"center",padding:60,color:"#475569"}}>Seleccioná al menos un grupo.</div>
@@ -612,19 +657,25 @@ export default function App() {
                             return(
                               <div key={di}
                                 onClick={()=>(!isOcc&&!isBlocked||isEscritorio&&cellBks.length<ESCRITORIO_MAX&&!isBlocked)&&openNew(date,hour,spaceId)}
-                                style={{borderLeft:"1px solid #0f1219",background:isBlocked?"#17101a":today?"#ffffff03":"transparent",cursor:(isOcc&&!(isEscritorio&&cellBks.length<ESCRITORIO_MAX))||isBlocked||!canEdit?"default":"pointer",position:"relative",minHeight:44,transition:"background 0.1s"}}
-                                onMouseEnter={e=>{if(!isOcc&&!isBlocked&&canEdit)e.currentTarget.style.background=`${sp.color}10`;}}
+                                style={{borderLeft:"1px solid #0f1219",background:isBlocked?"#17101a":today?"#ffffff03":"transparent",cursor:isBlocked?'not-allowed':(isOcc&&!(isEscritorio&&cellBks.length<ESCRITORIO_MAX))||!canEdit?'default':'pointer',position:"relative",minHeight:44,transition:"background 0.1s"}}
+                                onMouseEnter={e=>{if(!isOcc&&!isBlocked&&canEdit)e.currentTarget.style.background=`${sp.color}28`;}}
                                 onMouseLeave={e=>{e.currentTarget.style.background=isBlocked?"#17101a":today?"#ffffff03":"transparent";}}
                               >
                                 {isBlocked&&!isOcc&&<div style={{position:"absolute",inset:2,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:8,color:"#2d3748"}}>bloqueado</span></div>}
-                                {isEscritorio&&cellBks.length>0&&<div style={{position:"absolute",top:2,right:4,fontSize:9,fontWeight:700,color:cellBks.length>=ESCRITORIO_MAX?"#ef4444":sp.color,background:"#0d1018cc",borderRadius:4,padding:"1px 4px",zIndex:2}}>{cellBks.length}/{ESCRITORIO_MAX}</div>}
-                                {cellBks.map(bk=>{
+                                {isEscritorio&&cellBks.length>0&&<div style={{position:"absolute",top:2,right:4,fontSize:9,fontWeight:700,color:cellBks.length>=ESCRITORIO_MAX?"#ef4444":cellBks.length>=ESCRITORIO_MAX*0.75?"#f59e0b":sp.color,background:"#0d1018cc",borderRadius:4,padding:"1px 4px",zIndex:2}}>{cellBks.length}/{ESCRITORIO_MAX}</div>}
+                                {cellBks.length>1?(
+                                  <div onClick={e=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();setCellPicker({bks:cellBks,x:r.left,y:r.bottom,sp});}}
+                                    style={{position:"absolute",inset:2,background:`${sp.color}22`,border:`1px solid ${sp.color}55`,borderRadius:5,padding:"3px 7px",cursor:"pointer",display:"flex",flexDirection:"column",justifyContent:"center",gap:1}}>
+                                    <div style={{fontSize:11,fontWeight:700,color:sp.color}}>{cellBks.length} reservas</div>
+                                    <div style={{fontSize:8,color:sp.color,opacity:0.7}}>{cellBks.map(b=>b.clientName||"—").join(", ").substring(0,40)}{cellBks.map(b=>b.clientName||"—").join(", ").length>40?"…":""}</div>
+                                  </div>
+                                ):cellBks.map(bk=>{
                                   const isBlq=bk.isBloqueo;
                                   const bg=isBlq?"#3f1a1a":bk.sinCargo?"#1e2535":`${sp.color}22`;
                                   const bdr=isBlq?"1px solid #7f1d1d":bk.sinCargo?"1px solid #2a3550":`1px solid ${sp.color}55`;
                                   const clr=isBlq?"#ef4444":bk.sinCargo?"#64748b":sp.color;
                                   return(
-                                  <div key={bk.id} onClick={e=>{e.stopPropagation();openEdit(bk);}}
+                                  <div key={bk.id} onClick={e=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();setCellPicker({bks:[bk],x:r.left,y:r.bottom,sp,selected:bk});}}
                                     style={{position:"absolute",inset:2,background:bg,border:bdr,borderRadius:5,padding:"3px 7px",cursor:"pointer",overflow:"hidden"}}>
                                     <div style={{fontSize:11,fontWeight:700,color:clr,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                                       {isBlq?`🚫 ${bk.bloqueoMotivo||"Bloqueado"}`:bk.sinCargo?`🎁 ${bk.sinCargoMotivo||"Sin cargo"}`:bk.clientName}
@@ -739,11 +790,21 @@ export default function App() {
         else if(listTimeRange==="año"){listItems=listItems.filter(b=>b.date.startsWith(String(listTimeDate.getFullYear())));}
         // space filter
         if(listFilter!=="all") listItems=listItems.filter(b=>b.space===listFilter);
+        if(listClientSearch.trim()){
+          const q=listClientSearch.toLowerCase();
+          listItems=listItems.filter(b=>
+            (b.clientName||'').toLowerCase().includes(q)||
+            (b.bloqueoMotivo||'').toLowerCase().includes(q)||
+            (b.notes||'').toLowerCase().includes(q)
+          );
+        }
         listItems.sort((a,b)=>a.date!==b.date?a.date.localeCompare(b.date):a.startHour-b.startHour);
         return(
         <div style={{padding:16,maxWidth:860,margin:"0 auto"}}>
           {/* Filtros */}
           <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+            {/* Búsqueda */}
+            <input value={listClientSearch} onChange={e=>setListClientSearch(e.target.value)} placeholder="🔍 Buscar cliente, motivo…" style={{...inpSt,maxWidth:200}}/>
             {/* Time range */}
             <div style={{display:"flex",background:"#111520",borderRadius:8,padding:3,border:"1px solid #1e2535",gap:2}}>
               {[["proximos","Próximos"],["todos","Todos"],["pasados","Pasados"],["semana","Semana"],["mes","Mes"],["año","Año"]].map(([v,l])=>(
@@ -1079,6 +1140,102 @@ export default function App() {
         </div>
       )}
 
+      {/* ── CELL PICKER (non-modal, múltiples reservas) ── */}
+      {cellPicker&&(()=>{
+        const {bks,x,y,sp,selected}=cellPicker;
+        const left=Math.min(x,window.innerWidth-280);
+        const top=Math.min(y+4,window.innerHeight-340);
+        return(
+          <>
+            <div style={{position:"fixed",inset:0,zIndex:98}} onClick={()=>setCellPicker(null)}/>
+            <div style={{position:"fixed",left,top,zIndex:99,background:"#161b2a",border:`1px solid ${sp.color}55`,borderRadius:12,minWidth:260,maxWidth:320,boxShadow:"0 8px 32px #00000088",overflow:"hidden"}}>
+              {/* Header */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 12px",borderBottom:"1px solid #1e2535"}}>
+                {selected?(
+                  <button onClick={()=>setCellPicker(p=>({...p,selected:null}))} style={{background:"none",border:"none",color:sp.color,cursor:"pointer",fontSize:11,fontWeight:700,padding:0,display:"flex",alignItems:"center",gap:4}}>← Volver</button>
+                ):(
+                  <span style={{fontSize:11,fontWeight:700,color:sp.color}}>{bks.length} reservas · {sp.label}</span>
+                )}
+                <button onClick={()=>setCellPicker(null)} style={{background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:14,lineHeight:1,padding:"0 2px"}}>✕</button>
+              </div>
+
+              {selected?(()=>{
+                // ── Vista detalle ──
+                const bk=selected;
+                const isBlq=bk.isBloqueo;
+                const net=getNetAmount(bk);
+                const pagado=getTotalPagado(bk);
+                const resta=net-pagado;
+                const clr=isBlq?"#ef4444":bk.sinCargo?"#64748b":sp.color;
+                const dateStr=bk.date?new Date(bk.date+"T12:00").toLocaleDateString("es-AR",{weekday:"long",day:"2-digit",month:"long"}):"";
+                const client=clients.find(c=>c.id===bk.clientId);
+                return(
+                  <div style={{padding:"12px 14px"}}>
+                    {/* Nombre */}
+                    <div style={{fontSize:16,fontWeight:800,color:clr,marginBottom:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                      {isBlq?`🚫 ${bk.bloqueoMotivo||"Bloqueado"}`:bk.sinCargo?`🎁 ${bk.sinCargoMotivo||"Sin cargo"}`:bk.clientName||"—"}
+                      {!isBlq&&bk.recurrence&&bk.recurrence!="none"&&<span style={{marginLeft:6,fontSize:10,color:"#64748b"}}>🔁 recurrente</span>}
+                    </div>
+                    {/* Fecha y hora */}
+                    <div style={{fontSize:11,color:"#94a3b8",marginBottom:10,textTransform:"capitalize"}}>{dateStr} · {bk.startHour}:00–{bk.endHour}:00hs</div>
+                    {/* Info pills */}
+                    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
+                      {client?.phone&&<span style={{fontSize:10,background:"#1e2535",borderRadius:6,padding:"3px 8px",color:"#94a3b8"}}>📞 {client.phone}</span>}
+                      {!isBlq&&!bk.sinCargo&&net>0&&(
+                        <span style={{fontSize:10,background:resta>0?"#431407":"#052e16",borderRadius:6,padding:"3px 8px",color:resta>0?"#f97316":"#22c55e",fontWeight:700}}>
+                          {resta>0?`⚠ Debe ${fmtMoney(resta)}`:`✓ Pagado ${fmtMoney(net)}`}
+                        </span>
+                      )}
+                      {bk.sinCargo&&<span style={{fontSize:10,background:"#1e2535",borderRadius:6,padding:"3px 8px",color:"#64748b"}}>Sin cargo</span>}
+                      {isPast(bk)&&bk.asistio!==null&&(
+                        <span style={{fontSize:10,background:"#1e2535",borderRadius:6,padding:"3px 8px",color:bk.asistio?"#22c55e":"#ef4444",fontWeight:700}}>
+                          {bk.asistio?"✓ Asistió":"✗ No asistió"}
+                        </span>
+                      )}
+                    </div>
+                    {/* Notas */}
+                    {bk.notes&&<div style={{fontSize:10,color:"#64748b",background:"#1e2535",borderRadius:6,padding:"6px 8px",marginBottom:10,lineHeight:1.5}}>📝 {bk.notes}</div>}
+                    {/* Botón editar */}
+                    <button onClick={()=>{setCellPicker(null);openEdit(bk);}}
+                      style={{width:"100%",padding:"9px 0",borderRadius:8,border:`1px solid ${sp.color}88`,background:`${sp.color}22`,color:sp.color,fontWeight:700,fontSize:13,cursor:"pointer",letterSpacing:"0.03em"}}>
+                      ✏️ Editar reserva
+                    </button>
+                  </div>
+                );
+              })():(
+                // ── Vista lista ──
+                <div style={{padding:"8px 10px"}}>
+                  {bks.map(bk=>{
+                    const isBlq=bk.isBloqueo;
+                    const net=getNetAmount(bk);
+                    const pagado=getTotalPagado(bk);
+                    const resta=net-pagado;
+                    const clr=isBlq?"#ef4444":bk.sinCargo?"#64748b":sp.color;
+                    return(
+                      <div key={bk.id} onClick={()=>setCellPicker(p=>({...p,selected:bk}))}
+                        style={{padding:"7px 10px",borderRadius:8,marginBottom:5,cursor:"pointer",background:"#1e2535",border:"1px solid #2a3550",transition:"background 0.1s"}}
+                        onMouseEnter={e=>e.currentTarget.style.background="#253048"}
+                        onMouseLeave={e=>e.currentTarget.style.background="#1e2535"}>
+                        <div style={{fontSize:12,fontWeight:700,color:clr,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                          {isBlq?`🚫 ${bk.bloqueoMotivo||"Bloqueado"}`:bk.sinCargo?`🎁 ${bk.sinCargoMotivo||"Sin cargo"}`:bk.clientName||"—"}
+                          {!isBlq&&bk.recurrence&&bk.recurrence!="none"&&<span style={{marginLeft:4,fontSize:9,opacity:0.5}}>🔁</span>}
+                        </div>
+                        {!isBlq&&!bk.sinCargo&&net>0&&(
+                          <div style={{fontSize:10,marginTop:2,color:resta>0?"#f59e0b":"#22c55e",fontWeight:600}}>
+                            {resta>0?`⚠ ${fmtMoney(resta)} restante`:`✓ Pagado · ${fmtMoney(net)}`}
+                          </div>
+                        )}
+                        <div style={{fontSize:9,color:"#475569",marginTop:1}}>{bk.startHour}:00–{bk.endHour}:00{bk.createdBy?` · ${bk.createdBy}`:""}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        );
+      })()}
+
       {/* ── MODAL ALQUILER ── */}
       {modal&&(
         <div style={{position:"fixed",inset:0,background:"#000000d0",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16}}
@@ -1103,9 +1260,19 @@ export default function App() {
             {/* Tipo de entrada */}
             <div style={{display:"flex",gap:6,marginBottom:14}}>
               {[{v:false,l:"📅 Alquiler"},{v:true,l:"🚫 Bloquear espacio"}].map(({v,l})=>(
-                <button key={String(v)} onClick={()=>setForm(f=>({...f,isBloqueo:v}))} style={{flex:1,padding:"8px",borderRadius:8,border:`2px solid ${form.isBloqueo===v?(v?"#ef4444":"#22c55e"):"#2a2f3e"}`,background:form.isBloqueo===v?(v?"#ef444418":"#22c55e18"):"transparent",color:form.isBloqueo===v?(v?"#ef4444":"#22c55e"):"#64748b",cursor:"pointer",fontWeight:700,fontSize:12}}>{l}</button>
+                <button key={String(v)} onClick={()=>{setForm(f=>({...f,isBloqueo:v}));setModalTab('reserva');}} style={{flex:1,padding:"8px",borderRadius:8,border:`2px solid ${form.isBloqueo===v?(v?"#ef4444":"#22c55e"):"#2a2f3e"}`,background:form.isBloqueo===v?(v?"#ef444418":"#22c55e18"):"transparent",color:form.isBloqueo===v?(v?"#ef4444":"#22c55e"):"#64748b",cursor:"pointer",fontWeight:700,fontSize:12}}>{l}</button>
               ))}
             </div>
+
+            {/* Tabs — solo en modo Alquiler */}
+            {!form.isBloqueo&&(
+              <div style={{display:"flex",gap:2,background:"#0b0e17",borderRadius:8,padding:3,marginBottom:16,border:"1px solid #1e2535"}}>
+                {[{v:"reserva",l:"📅 Reserva"},{v:"cliente",l:"👤 Cliente"},{v:"cobro",l:"💰 Cobro"}].map(({v,l})=>(
+                  <button key={v} onClick={()=>setModalTab(v)} style={{flex:1,padding:"7px 0",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,background:modalTab===v?"#22c55e":"transparent",color:modalTab===v?"#000":"#64748b"}}>{l}</button>
+                ))}
+              </div>
+            )}
+
             {form.isBloqueo?(
               <FG label="Motivo del bloqueo *">
                 <input value={form.bloqueoMotivo||""} onChange={e=>setForm(f=>({...f,bloqueoMotivo:e.target.value}))} placeholder="Ej: Academia, Torneo nocturno…" style={{...inpSt,borderColor:!(form.bloqueoMotivo||"").trim()?"#ef444466":"#2a2f3e"}}/>
@@ -1113,6 +1280,7 @@ export default function App() {
               </FG>
             ):(
               <>
+            {modalTab==='reserva'&&<>
             <label style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,cursor:"pointer",background:form.sinCargo?"#22c55e0d":"#1a1f2e",padding:"9px 12px",borderRadius:10,border:`1px solid ${form.sinCargo?"#22c55e44":"#2a2f3e"}`}}>
               <input type="checkbox" checked={form.sinCargo} onChange={e=>setForm(f=>({...f,sinCargo:e.target.checked}))} style={{width:15,height:15,accentColor:"#22c55e"}}/>
               <div><div style={{fontSize:13,fontWeight:700,color:form.sinCargo?"#22c55e":"#94a3b8"}}>🎁 Sin cargo</div><div style={{fontSize:10,color:"#475569"}}>Cortesía, uso interno…</div></div>
@@ -1123,9 +1291,11 @@ export default function App() {
                 {!(form.sinCargoMotivo||"").trim()&&<div style={{fontSize:10,color:"#ef4444",marginTop:3}}>Requerido para guardar</div>}
               </FG>
             )}
+            </>}
               </>
             )}
 
+            {(form.isBloqueo||modalTab==='reserva')&&(<>
             <FG label="Espacio">
               <select value={form.space} onChange={e=>{const sp=SPACES[e.target.value];setForm(f=>({...f,space:e.target.value,totalAmount:sp.price!=null?sp.price:f.totalAmount}));}} style={inpSt}>
                 {Object.values(SPACES).map(s=><option key={s.id} value={s.id}>{s.label}{s.price?` — ${fmtMoney(s.price)}`:" — a convenir"}</option>)}
@@ -1151,10 +1321,15 @@ export default function App() {
               {form.recurrence==="count"&&<div style={{marginTop:10,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:12,color:"#64748b"}}>Semanas:</span><input type="number" min={1} max={52} value={form.recurrenceCount} onChange={e=>setForm(f=>({...f,recurrenceCount:+e.target.value}))} style={{...inpSt,width:60}}/><span style={{fontSize:11,color:"#475569"}}>{form.recurrenceCount} alquileres</span></div>}
               {form.recurrence==="until"&&<div style={{marginTop:10,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:12,color:"#64748b"}}>Hasta:</span><input type="date" value={form.recurrenceUntil} onChange={e=>setForm(f=>({...f,recurrenceUntil:e.target.value}))} style={{...inpSt,width:"auto"}}/></div>}
             </div>
+            </>)}
 
-            {!form.isBloqueo&&!form.sinCargo&&(
+            {/* Tab Cliente */}
+            {!form.isBloqueo&&modalTab==='cliente'&&(
               <>
-                <div style={{borderTop:"1px solid #1e2535",margin:"10px 0"}}/>
+              {form.sinCargo?(
+                <div style={{textAlign:"center",padding:"40px 0",color:"#475569",fontSize:13}}>🎁 Sin cargo — no requiere cliente.</div>
+              ):(
+              <>
                 <div style={{fontSize:9,color:"#475569",textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Cliente</div>
                 <div style={{marginBottom:10}}>
                   {form.clientName?(
@@ -1174,7 +1349,18 @@ export default function App() {
                     <FG label="Empresa / Club"><input value={form.clientOrg} onChange={e=>setForm(f=>({...f,clientOrg:e.target.value}))} placeholder="Org…" style={inpSt}/></FG>
                   </div>
                 )}
-                <div style={{borderTop:"1px solid #1e2535",margin:"10px 0"}}/>
+              </>
+              )}
+              </>
+            )}
+
+            {/* Tab Cobro */}
+            {!form.isBloqueo&&modalTab==='cobro'&&(
+              <>
+              {form.sinCargo?(
+                <div style={{textAlign:"center",padding:"40px 0",color:"#475569",fontSize:13}}>🎁 Sin cargo — no hay cobro registrado.</div>
+              ):(
+              <>
                 <div style={{fontSize:9,color:"#475569",textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Pago</div>
 
                 {/* Montos base */}
@@ -1279,6 +1465,8 @@ export default function App() {
                   );
                 })()}
               </>
+              )}
+              </>
             )}
 
             {/* Asistencia — solo si ya pasó la fecha/hora */}
@@ -1307,15 +1495,27 @@ export default function App() {
 
             <FG label="Notas"><textarea value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Observaciones…" style={{...inpSt,height:50,resize:"vertical"}}/></FG>
 
-            <div style={{display:"flex",gap:8,marginTop:16}}>
-              {editing&&isAdmin&&<button onClick={()=>del(editing.id)} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #ef444444",background:"#ef444410",color:"#ef4444",cursor:"pointer",fontSize:12}}>Eliminar</button>}
-              <div style={{flex:1}}/>
-              <button onClick={()=>setModal(false)} style={{padding:"8px 16px",borderRadius:8,border:"1px solid #2a2f3e",background:"transparent",color:"#94a3b8",cursor:"pointer",fontSize:12}}>Cancelar</button>
-              {canEdit&&(()=>{
-                const disabled=!form.date||(form.isBloqueo&&!(form.bloqueoMotivo||"").trim())||(!form.isBloqueo&&!form.sinCargo&&!form.clientName)||(!form.isBloqueo&&form.sinCargo&&!(form.sinCargoMotivo||"").trim());
-                return<button onClick={save} disabled={disabled} style={{padding:"8px 20px",borderRadius:8,border:"none",fontSize:12,fontWeight:700,cursor:"pointer",background:disabled?"#1e2535":"linear-gradient(135deg,#22c55e,#16a34a)",color:disabled?"#475569":"#000"}}>{editing?"Guardar":form.isBloqueo?"Bloquear":"Crear alquiler"}</button>;
-              })()}
-            </div>
+            {(()=>{
+              const MODAL_TABS=['reserva','cliente','cobro'];
+              const tabIdx=MODAL_TABS.indexOf(modalTab);
+              const disabled=!form.date||(form.isBloqueo&&!(form.bloqueoMotivo||"").trim())||(!form.isBloqueo&&!form.sinCargo&&!form.clientName)||((!form.isBloqueo)&&form.sinCargo&&!(form.sinCargoMotivo||"").trim());
+              const isLast=form.isBloqueo||tabIdx===MODAL_TABS.length-1;
+              return(
+                <div style={{display:"flex",gap:8,marginTop:16}}>
+                  {editing&&isAdmin&&<button onClick={()=>del(editing.id)} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #ef444444",background:"#ef444410",color:"#ef4444",cursor:"pointer",fontSize:12}}>Eliminar</button>}
+                  <div style={{flex:1}}/>
+                  <button onClick={()=>setModal(false)} style={{padding:"8px 16px",borderRadius:8,border:"1px solid #2a2f3e",background:"transparent",color:"#94a3b8",cursor:"pointer",fontSize:12}}>Cancelar</button>
+                  {!form.isBloqueo&&tabIdx>0&&(
+                    <button onClick={()=>setModalTab(MODAL_TABS[tabIdx-1])} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #2a2f3e",background:"transparent",color:"#94a3b8",cursor:"pointer",fontSize:12}}>← Anterior</button>
+                  )}
+                  {canEdit&&(isLast?(
+                    <button onClick={save} disabled={disabled} style={{padding:"8px 20px",borderRadius:8,border:"none",fontSize:12,fontWeight:700,cursor:"pointer",background:disabled?"#1e2535":"linear-gradient(135deg,#22c55e,#16a34a)",color:disabled?"#475569":"#000"}}>{editing?"Guardar":form.isBloqueo?"Bloquear":"Crear alquiler"}</button>
+                  ):(
+                    <button onClick={()=>setModalTab(MODAL_TABS[tabIdx+1])} style={{padding:"8px 20px",borderRadius:8,border:"none",fontSize:12,fontWeight:700,cursor:"pointer",background:"linear-gradient(135deg,#3b82f6,#2563eb)",color:"#fff"}}>Siguiente →</button>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -1397,12 +1597,49 @@ export default function App() {
               ):null;
             })()}
             <div style={{display:"flex",gap:8,marginTop:16}}>
-              {editingClient&&isAdmin&&<button onClick={()=>{if(confirm("¿Eliminar cliente?"))setClients(p=>p.filter(c=>c.id!==editingClient.id));setClientModal(false);}} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #ef444444",background:"#ef444410",color:"#ef4444",cursor:"pointer",fontSize:12}}>Eliminar</button>}
+              {editingClient&&isAdmin&&<button onClick={()=>{setConfirmModal({title:'¿Eliminar cliente?',body:editingClient.name,danger:true,onConfirm:()=>{setClients(p=>p.filter(c=>c.id!==editingClient.id));setClientModal(false);setConfirmModal(null);showToast('Cliente eliminado','error');}});}} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #ef444444",background:"#ef444410",color:"#ef4444",cursor:"pointer",fontSize:12}}>Eliminar</button>}
               <div style={{flex:1}}/>
               <button onClick={()=>setClientModal(false)} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #2a2f3e",background:"transparent",color:"#94a3b8",cursor:"pointer",fontSize:12}}>Cancelar</button>
               <button onClick={saveClient} disabled={!clientForm.name} style={{padding:"8px 18px",borderRadius:8,border:"none",fontSize:12,fontWeight:700,cursor:"pointer",background:!clientForm.name?"#1e2535":"linear-gradient(135deg,#22c55e,#16a34a)",color:!clientForm.name?"#475569":"#000"}}>{editingClient?"Guardar":"Agregar"}</button>
             </div>
           </div>
+        </div>
+      )}
+      {/* ── CONFIRM MODAL ── */}
+      {confirmModal&&(
+        <div style={{position:'fixed',inset:0,background:'#000000d0',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500,padding:16}}
+          onClick={e=>e.target===e.currentTarget&&setConfirmModal(null)}>
+          <div style={{background:'#111520',border:'1px solid #2a2f3e',borderRadius:14,width:'100%',maxWidth:380,padding:24}}>
+            <div style={{fontSize:16,fontWeight:800,marginBottom:8,color:confirmModal.danger?'#ef4444':'#e2e8f0'}}>{confirmModal.title}</div>
+            <div style={{fontSize:13,color:'#94a3b8',marginBottom:20,lineHeight:1.5}}>{confirmModal.body}</div>
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+              <button onClick={()=>setConfirmModal(null)}
+                style={{padding:'8px 16px',borderRadius:8,border:'1px solid #2a2f3e',background:'transparent',color:'#94a3b8',cursor:'pointer',fontSize:13}}>
+                Cancelar
+              </button>
+              <button onClick={confirmModal.onConfirm}
+                style={{padding:'8px 18px',borderRadius:8,border:'none',background:confirmModal.danger?'#ef4444':'#22c55e',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:700}}>
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TOAST ── */}
+      {toast && (
+        <div style={{
+          position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)',
+          zIndex:9999, pointerEvents:'none',
+          background: toast.type==='error' ? '#1a0808' : '#052e16',
+          border:`1px solid ${toast.type==='error' ? '#ef4444' : '#22c55e'}`,
+          color: toast.type==='error' ? '#ef4444' : '#22c55e',
+          borderRadius:10, padding:'10px 20px', fontSize:13, fontWeight:700,
+          boxShadow:'0 4px 24px #00000066',
+          animation:'fadeInUp 0.2s ease',
+          whiteSpace:'nowrap',
+        }}>
+          {toast.msg}
         </div>
       )}
     </div>
