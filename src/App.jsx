@@ -287,6 +287,7 @@ export default function App() {
   // Lista filters
   const [listTimeRange,  setListTimeRange]  = useState("proximos"); // "todos"|"proximos"|"pasados"|"semana"|"mes"|"año"
   const [listTimeDate,   setListTimeDate]   = useState(new Date());
+  const [listShowBloqueos,setListShowBloqueos]=useState(false);
   // Clientes filters
   const [clientListSearch,setClientListSearch]=useState("");
   const [clientFilter,   setClientFilter]   = useState("all"); // "all"|"incompletos"
@@ -571,11 +572,10 @@ export default function App() {
                 const sp=SPACES[spaceId];
                 return(
                   <div key={spaceId}>
-                    <div style={{display:"grid",gridTemplateColumns:"80px repeat(7,1fr)",background:`${sp.color}0d`,borderTop:`1px solid ${sp.color}2a`}}>
-                      <div style={{padding:"3px 8px",display:"flex",alignItems:"center",gap:4,borderRight:"1px solid #1e2535"}}>
-                        <div style={{width:5,height:5,borderRadius:"50%",background:sp.color,flexShrink:0}}/>
-                        <span style={{fontSize:9,fontWeight:800,color:sp.color,textTransform:"uppercase"}}>{sp.short}</span>
-                        {sp.price&&<span style={{fontSize:7,color:"#475569"}}>{fmtMoney(sp.price)}</span>}
+                    <div style={{display:"grid",gridTemplateColumns:"80px repeat(7,1fr)",background:`${sp.color}18`,borderTop:`2px solid ${sp.color}55`}}>
+                      <div style={{padding:"5px 8px",display:"flex",flexDirection:"column",alignItems:"flex-start",justifyContent:"center",gap:2,borderRight:"1px solid #1e2535",borderLeft:`4px solid ${sp.color}`}}>
+                        <span style={{fontSize:11,fontWeight:900,color:"#0a0d14",background:sp.color,borderRadius:4,padding:"1px 6px",letterSpacing:"0.06em",lineHeight:"1.4"}}>{sp.short}</span>
+                        {sp.price&&<span style={{fontSize:8,color:sp.color,opacity:0.7}}>{fmtMoney(sp.price)}</span>}
                       </div>
                       {weekDates.map((_,di)=><div key={di} style={{borderLeft:"1px solid #1e2535"}}/>)}
                     </div>
@@ -711,6 +711,8 @@ export default function App() {
       {view==="list"&&(()=>{
         const todayKey=dateKey(new Date());
         let listItems=[...expanded];
+        // bloqueos filter
+        if(!listShowBloqueos) listItems=listItems.filter(b=>!b.isBloqueo);
         // time range filter
         if(listTimeRange==="proximos") listItems=listItems.filter(b=>b.date>=todayKey);
         else if(listTimeRange==="pasados") listItems=listItems.filter(b=>b.date<todayKey);
@@ -748,6 +750,10 @@ export default function App() {
               <option value="all">Todos los espacios</option>
               {Object.values(SPACES).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
             </select>
+            {/* Bloqueos toggle */}
+            <button onClick={()=>setListShowBloqueos(p=>!p)} style={{padding:"4px 12px",borderRadius:20,border:`1px solid ${listShowBloqueos?"#ef4444":"#2a2f3e"}`,background:listShowBloqueos?"#ef444418":"transparent",color:listShowBloqueos?"#ef4444":"#475569",cursor:"pointer",fontSize:11,fontWeight:600}}>
+              🚫 {listShowBloqueos?"Ocultar bloqueos":"Mostrar bloqueos"}
+            </button>
             <span style={{fontSize:11,color:"#475569",marginLeft:"auto"}}>{listItems.length} resultado{listItems.length!==1?"s":""}</span>
           </div>
           {listItems.map(bk=>{
