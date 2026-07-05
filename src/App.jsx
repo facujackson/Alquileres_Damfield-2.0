@@ -29,13 +29,14 @@ const SPACES = {
   sala_10:        { id:"sala_10",        label:"Sala 10p",        short:"S10", color:"#a78bfa", group:"coworking", price:null   },
   sala_4a:        { id:"sala_4a",        label:"Sala 4-5p A",     short:"S4A", color:"#c4b5fd", group:"coworking", price:null   },
   sala_4b:        { id:"sala_4b",        label:"Sala 4-5p B",     short:"S4B", color:"#ddd6fe", group:"coworking", price:null   },
+  escritorio:     { id:"escritorio",     label:"Escritorio",      short:"ESC", color:"#c084fc", group:"coworking", price:null   },
 };
 
 const SPACE_GROUPS = [
   { label:"⚽ Fútbol",    g:"futbol",    ids:["futbol_11","futbol_8a","futbol_8b","futbol_8c"] },
   { label:"🏑 Hockey",    g:"hockey",    ids:["hockey_11","hockey_7a","hockey_7b"] },
   { label:"☕ Pausa",     g:"otros",     ids:["pausa"] },
-  { label:"💼 Coworking", g:"coworking", ids:["coworking_total","sala_10","sala_4a","sala_4b"] },
+  { label:"💼 Coworking", g:"coworking", ids:["coworking_total","sala_10","sala_4a","sala_4b","escritorio"] },
 ];
 
 const CONFLICT_GROUPS = [
@@ -135,16 +136,25 @@ function isPast(bk){
   return new Date(bk.date+"T"+pad(bk.endHour)+":00:00") < new Date();
 }
 function getTotalPagado(bk){
-  if(bk.sinCargo) return 0;
+  if(bk.sinCargo||bk.isBloqueo) return 0;
   if(bk.pagos&&bk.pagos.length>0) return bk.pagos.reduce((s,p)=>s+(Number(p.monto)||0),0);
   // backward compat
   if(!bk.paymentType||bk.paymentType==="total"||bk.paymentType==="momento") return Number(bk.totalAmount)||0;
   if(bk.paymentType==="seña_saldo") return bk.saldoPaid?Number(bk.totalAmount)||0:Number(bk.señaAmount)||0;
   return 0;
 }
+function getNetAmount(bk){
+  if(bk.sinCargo||bk.isBloqueo) return 0;
+  const base=Number(bk.totalAmount)||0;
+  if(!bk.descuentoTipo||bk.descuentoTipo==="none") return base;
+  if(bk.descuentoTipo==="pct") return Math.max(0,base-base*(Number(bk.descuentoValor)||0)/100);
+  if(bk.descuentoTipo==="monto") return Math.max(0,base-(Number(bk.descuentoValor)||0));
+  return base;
+}
 function payLabel(bk){
+  if(bk.isBloqueo) return "🚫 Bloqueado";
   if(bk.sinCargo) return "Sin cargo";
-  const total=Number(bk.totalAmount)||0;
+  const total=getNetAmount(bk);
   const pagado=getTotalPagado(bk);
   const resta=total-pagado;
   if(total===0) return "—";
@@ -153,7 +163,8 @@ function payLabel(bk){
   return "⚠ Sin pago";
 }
 function payColors(bk){
-  const total=Number(bk.totalAmount)||0;
+  if(bk.isBloqueo) return {bg:"#7f1d1d22",fg:"#ef4444"};
+  const total=getNetAmount(bk);
   const pagado=getTotalPagado(bk);
   const resta=total-pagado;
   if(resta<=0&&total>0) return {bg:"#22c55e22",fg:"#22c55e"};
@@ -165,14 +176,17 @@ const EMPTY_FORM={
   space:"futbol_11",date:"",startHour:18,endHour:19,
   clientId:"",clientName:"",clientPhone:"",clientEmail:"",clientOrg:"",
   totalAmount:"",señaAmount:"",
-  pagos:[],           // [{id,monto,fecha,nota}]
+  descuentoTipo:"none",descuentoValor:"",   // "none"|"pct"|"monto"
+  pagos:[],           // [{id,monto,fecha,nota,forma}]
   asistio:null,       // null | true | false
-  sinCargo:false,sinCargoMotivo:"",notes:"",
+  sinCargo:false,sinCargoMotivo:"",
+  isBloqueo:false,bloqueoMotivo:"",         // bloqueo de espacio
+  notes:"",
   recurrence:"none",recurrenceCount:4,recurrenceUntil:"",
-  // backward compat (no se muestran pero se preservan)
+  // backward compat
   paymentType:"seña_saldo",saldoPaid:false,
   // transient UI state
-  newPagoMonto:"",newPagoFecha:"",
+  newPagoMonto:"",newPagoFecha:"",newPagoForma:"",
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -270,6 +284,14 @@ export default function App() {
   const [editingUser,    setEditingUser]    = useState(null);
   const [auditModal,     setAuditModal]     = useState(null); // booking to show audit
   const [showUserPwd,    setShowUserPwd]    = useState(false);
+  // Lista filters
+  const [listTimeRange,  setListTimeRange]  = useState("proximos"); // "todos"|"proximos"|"pasados"|"semana"|"mes"|"año"
+  const [listTimeDate,   setListTimeDate]   = useState(new Date());
+  // Clientes filters
+  const [clientListSearch,setClientListSearch]=useState("");
+  const [clientFilter,   setClientFilter]   = useState("all"); // "all"|"incompletos"
+  const [clientSort,     setClientSort]     = useState("count_desc");
+  const [clientSpaceFilter,setClientSpaceFilter]=useState("all");
 
   const isAdmin    = currentUser?.role==="admin";
   const isReadonly = currentUser?.role==="readonly";
@@ -345,14 +367,21 @@ export default function App() {
     const pagos=master.pagos||[];
     const pagado=pagos.reduce((s,p)=>s+(Number(p.monto)||0),0)||getTotalPagado({...master,pagos:[]});
     const restanteInit=Math.max(0,(Number(master.totalAmount)||0)-pagado);
-    setForm({...master, pagos, asistio:master.asistio??null, newPagoMonto:restanteInit>0?String(restanteInit):"", newPagoFecha:""});
+    setForm({...master, pagos, asistio:master.asistio??null,
+      descuentoTipo:master.descuentoTipo||"none", descuentoValor:master.descuentoValor||"",
+      isBloqueo:master.isBloqueo||false, bloqueoMotivo:master.bloqueoMotivo||"",
+      sinCargo:master.sinCargo||false, sinCargoMotivo:master.sinCargoMotivo||"",
+      notes:master.notes||"",
+      newPagoMonto:restanteInit>0?String(restanteInit):"", newPagoFecha:"", newPagoForma:""});
     setModal(true);
   }
   function save(){
-    if(!form.sinCargo&&!form.clientName) return;
     if(!form.date) return;
+    if(form.isBloqueo&&!(form.bloqueoMotivo||"").trim()) return;
+    if(!form.isBloqueo&&!form.sinCargo&&!form.clientName) return;
+    if(!form.isBloqueo&&form.sinCargo&&!(form.sinCargoMotivo||"").trim()) return;
     let entry={...form};
-    if(!form.sinCargo&&form.clientName){
+    if(!form.isBloqueo&&!form.sinCargo&&form.clientName){
       let cid=form.clientId;
       if(!cid){
         cid="c_"+Date.now();
@@ -412,7 +441,7 @@ export default function App() {
 
   // ── Finanzas ──
   const finData = useMemo(()=>{
-    let filtered=expanded.filter(b=>!b.sinCargo);
+    let filtered=expanded.filter(b=>!b.sinCargo&&!b.isBloqueo);
     if(finPeriod==="semana"){
       const wk=getWeekDates(finDate).map(d=>dateKey(d));
       filtered=filtered.filter(b=>wk.includes(b.date));
@@ -422,18 +451,18 @@ export default function App() {
     } else if(finPeriod==="año"){
       filtered=filtered.filter(b=>b.date.startsWith(String(finDate.getFullYear())));
     }
-    const total   =filtered.reduce((s,b)=>s+(Number(b.totalAmount)||0),0);
+    const total   =filtered.reduce((s,b)=>s+getNetAmount(b),0);
     const cobrado=filtered.reduce((s,b)=>s+getTotalPagado(b),0);
     const bySpace={};
     filtered.forEach(b=>{
       if(!bySpace[b.space]) bySpace[b.space]={total:0,cobrado:0,count:0};
       bySpace[b.space].count++;
-      bySpace[b.space].total+=Number(b.totalAmount)||0;
+      bySpace[b.space].total+=getNetAmount(b);
       bySpace[b.space].cobrado+=getTotalPagado(b);
     });
-    const pending=filtered.filter(b=>!b.sinCargo&&(Number(b.totalAmount)||0)-getTotalPagado(b)>0);
-    const FORMAS=[["efectivo","💵 Efectivo"],["transferencia","🏦 Transferencia"],["debito","💳 Débito"],["credito","💳 Crédito"]];
-    const byForma={efectivo:0,transferencia:0,debito:0,credito:0};
+    const pending=filtered.filter(b=>getNetAmount(b)-getTotalPagado(b)>0);
+    const FORMAS=[["efectivo","💵 Efectivo"],["transferencia","🏦 Transferencia"],["debito","💳 Débito"],["credito","💳 Crédito"],["cuentacorriente","📒 Cta. Cte."]];
+    const byForma={efectivo:0,transferencia:0,debito:0,credito:0,cuentacorriente:0};
     filtered.forEach(b=>{
       if(b.pagos&&b.pagos.length>0){
         b.pagos.forEach(p=>{ const f=p.forma||"efectivo"; if(byForma[f]!==undefined) byForma[f]+=(Number(p.monto)||0); });
@@ -571,25 +600,32 @@ export default function App() {
                                 onMouseLeave={e=>{e.currentTarget.style.background=isBlocked?"#17101a":today?"#ffffff03":"transparent";}}
                               >
                                 {isBlocked&&!isOcc&&<div style={{position:"absolute",inset:2,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:8,color:"#2d3748"}}>bloqueado</span></div>}
-                                {cellBks.map(bk=>(
+                                {cellBks.map(bk=>{
+                                  const isBlq=bk.isBloqueo;
+                                  const bg=isBlq?"#3f1a1a":bk.sinCargo?"#1e2535":`${sp.color}22`;
+                                  const bdr=isBlq?"1px solid #7f1d1d":bk.sinCargo?"1px solid #2a3550":`1px solid ${sp.color}55`;
+                                  const clr=isBlq?"#ef4444":bk.sinCargo?"#64748b":sp.color;
+                                  return(
                                   <div key={bk.id} onClick={e=>{e.stopPropagation();openEdit(bk);}}
-                                    style={{position:"absolute",inset:2,background:bk.sinCargo?"#1e2535":`${sp.color}22`,border:`1px solid ${bk.sinCargo?"#2a3550":sp.color+"55"}`,borderRadius:5,padding:"3px 7px",cursor:"pointer",overflow:"hidden"}}>
-                                    <div style={{fontSize:11,fontWeight:700,color:bk.sinCargo?"#64748b":sp.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                                      {bk.sinCargo?`🎁 ${bk.sinCargoMotivo||"Sin cargo"}`:bk.clientName}
-                                      {bk.recurrence&&bk.recurrence!="none"&&<span style={{marginLeft:3,fontSize:8,opacity:0.6}}>🔁</span>}
+                                    style={{position:"absolute",inset:2,background:bg,border:bdr,borderRadius:5,padding:"3px 7px",cursor:"pointer",overflow:"hidden"}}>
+                                    <div style={{fontSize:11,fontWeight:700,color:clr,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                                      {isBlq?`🚫 ${bk.bloqueoMotivo||"Bloqueado"}`:bk.sinCargo?`🎁 ${bk.sinCargoMotivo||"Sin cargo"}`:bk.clientName}
+                                      {!isBlq&&bk.recurrence&&bk.recurrence!="none"&&<span style={{marginLeft:3,fontSize:8,opacity:0.6}}>🔁</span>}
                                     </div>
-                                    {!bk.sinCargo&&(()=>{
-                                      const resta=(Number(bk.totalAmount)||0)-getTotalPagado(bk);
-                                      if(resta>0&&Number(bk.totalAmount)>0) return <div style={{fontSize:8,color:"#f59e0b",fontWeight:700}}>⚠ {fmtMoney(resta)} restante</div>;
-                                      if(Number(bk.totalAmount)>0) return <div style={{fontSize:8,color:"#22c55e",fontWeight:700}}>✓ Pagado</div>;
+                                    {!isBlq&&!bk.sinCargo&&(()=>{
+                                      const net=getNetAmount(bk);
+                                      const resta=net-getTotalPagado(bk);
+                                      if(resta>0&&net>0) return <div style={{fontSize:8,color:"#f59e0b",fontWeight:700}}>⚠ {fmtMoney(resta)} restante</div>;
+                                      if(net>0) return <div style={{fontSize:8,color:"#22c55e",fontWeight:700}}>✓ Pagado</div>;
                                       return null;
                                     })()}
-                                    {!bk.sinCargo&&isPast(bk)&&bk.asistio!==null&&(
+                                    {!isBlq&&!bk.sinCargo&&isPast(bk)&&bk.asistio!==null&&(
                                       <div style={{fontSize:8,fontWeight:700,color:bk.asistio?"#22c55e":"#ef4444"}}>{bk.asistio?"✓ asistió":"✗ no asistió"}</div>
                                     )}
                                     <div style={{fontSize:8,color:"#334155",marginTop:1}}>{bk.createdBy||""}</div>
                                   </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             );
                           })}
@@ -651,11 +687,12 @@ export default function App() {
                       {/* Bookings */}
                       {dayBks.slice(0,maxShow).map(bk=>{
                         const sp=SPACES[bk.space];
+                        const isBlq=bk.isBloqueo;
                         return(
                           <div key={bk.id} onClick={e=>{e.stopPropagation();openEdit(bk);}}
-                            style={{background:bk.sinCargo?"#1e2535":`${sp.color}22`,borderLeft:`3px solid ${bk.sinCargo?"#2a3550":sp.color}`,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden"}}>
-                            <div style={{fontSize:10,fontWeight:700,color:bk.sinCargo?"#64748b":sp.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                              {bk.startHour}:00 {bk.sinCargo?`🎁 ${bk.sinCargoMotivo||"Sin cargo"}`:bk.clientName}
+                            style={{background:isBlq?"#3f1a1a":bk.sinCargo?"#1e2535":`${sp.color}22`,borderLeft:`3px solid ${isBlq?"#ef4444":bk.sinCargo?"#2a3550":sp.color}`,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden"}}>
+                            <div style={{fontSize:10,fontWeight:700,color:isBlq?"#ef4444":bk.sinCargo?"#64748b":sp.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                              {bk.startHour}:00 {isBlq?`🚫 ${bk.bloqueoMotivo||"Bloqueado"}`:bk.sinCargo?`🎁 ${bk.sinCargoMotivo||"Sin cargo"}`:bk.clientName}
                             </div>
                           </div>
                         );
@@ -671,80 +708,193 @@ export default function App() {
       })()}
 
       {/* ── LIST ── */}
-      {view==="list"&&(
+      {view==="list"&&(()=>{
+        const todayKey=dateKey(new Date());
+        let listItems=[...expanded];
+        // time range filter
+        if(listTimeRange==="proximos") listItems=listItems.filter(b=>b.date>=todayKey);
+        else if(listTimeRange==="pasados") listItems=listItems.filter(b=>b.date<todayKey);
+        else if(listTimeRange==="semana"){const wk=getWeekDates(listTimeDate).map(d=>dateKey(d));listItems=listItems.filter(b=>wk.includes(b.date));}
+        else if(listTimeRange==="mes"){const pfx=`${listTimeDate.getFullYear()}-${pad(listTimeDate.getMonth()+1)}`;listItems=listItems.filter(b=>b.date.startsWith(pfx));}
+        else if(listTimeRange==="año"){listItems=listItems.filter(b=>b.date.startsWith(String(listTimeDate.getFullYear())));}
+        // space filter
+        if(listFilter!=="all") listItems=listItems.filter(b=>b.space===listFilter);
+        listItems.sort((a,b)=>a.date!==b.date?a.date.localeCompare(b.date):a.startHour-b.startHour);
+        return(
         <div style={{padding:16,maxWidth:860,margin:"0 auto"}}>
-          <div style={{display:"flex",gap:10,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
-            <span style={{fontSize:11,color:"#64748b"}}>Espacio:</span>
+          {/* Filtros */}
+          <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+            {/* Time range */}
+            <div style={{display:"flex",background:"#111520",borderRadius:8,padding:3,border:"1px solid #1e2535",gap:2}}>
+              {[["proximos","Próximos"],["todos","Todos"],["pasados","Pasados"],["semana","Semana"],["mes","Mes"],["año","Año"]].map(([v,l])=>(
+                <button key={v} onClick={()=>{setListTimeRange(v);if(v!==listTimeRange)setListTimeDate(new Date());}} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,background:listTimeRange===v?"#22c55e":"transparent",color:listTimeRange===v?"#000":"#64748b"}}>{l}</button>
+              ))}
+            </div>
+            {/* Date nav para semana/mes/año */}
+            {["semana","mes","año"].includes(listTimeRange)&&(
+              <div style={{display:"flex",alignItems:"center",gap:5,background:"#111520",borderRadius:8,padding:"3px 6px",border:"1px solid #1e2535"}}>
+                <button onClick={()=>{const d=new Date(listTimeDate);if(listTimeRange==="semana")d.setDate(d.getDate()-7);else if(listTimeRange==="mes")d.setMonth(d.getMonth()-1);else d.setFullYear(d.getFullYear()-1);setListTimeDate(d);}} style={navBtn}>‹</button>
+                <span style={{fontSize:11,fontWeight:700,color:"#94a3b8",minWidth:140,textAlign:"center"}}>
+                  {listTimeRange==="semana"&&(()=>{const wk=getWeekDates(listTimeDate);return`${wk[0].getDate()} ${wk[0].toLocaleDateString("es-AR",{month:"short"})} – ${wk[6].getDate()} ${wk[6].toLocaleDateString("es-AR",{month:"short",year:"numeric"})}`;})()}
+                  {listTimeRange==="mes"&&listTimeDate.toLocaleDateString("es-AR",{month:"long",year:"numeric"})}
+                  {listTimeRange==="año"&&String(listTimeDate.getFullYear())}
+                </span>
+                <button onClick={()=>{const d=new Date(listTimeDate);if(listTimeRange==="semana")d.setDate(d.getDate()+7);else if(listTimeRange==="mes")d.setMonth(d.getMonth()+1);else d.setFullYear(d.getFullYear()+1);setListTimeDate(d);}} style={navBtn}>›</button>
+                <button onClick={()=>setListTimeDate(new Date())} style={{...navBtn,fontSize:10,padding:"2px 7px"}}>Hoy</button>
+              </div>
+            )}
+            {/* Space filter */}
             <select value={listFilter} onChange={e=>setListFilter(e.target.value)} style={selSt}>
-              <option value="all">Todos</option>
+              <option value="all">Todos los espacios</option>
               {Object.values(SPACES).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
             </select>
+            <span style={{fontSize:11,color:"#475569",marginLeft:"auto"}}>{listItems.length} resultado{listItems.length!==1?"s":""}</span>
           </div>
-          {[...expanded].filter(b=>listFilter==="all"||b.space===listFilter)
-            .sort((a,b)=>a.date!==b.date?a.date.localeCompare(b.date):a.startHour-b.startHour)
-            .map(bk=>{
-              const sp=SPACES[bk.space];
-              const pc=bk.sinCargo?null:payColors(bk);
-              return(
-                <div key={bk.id} onClick={()=>openEdit(bk)} style={{background:"#111520",border:`1px solid ${sp.color}2a`,borderLeft:`4px solid ${sp.color}`,borderRadius:10,padding:"10px 14px",marginBottom:7,cursor:"pointer",display:"flex",gap:14,alignItems:"center",transition:"background 0.12s"}}
-                  onMouseEnter={e=>e.currentTarget.style.background="#151c2c"}
-                  onMouseLeave={e=>e.currentTarget.style.background="#111520"}
-                >
-                  <div style={{minWidth:76}}>
-                    <div style={{fontSize:10,color:"#64748b"}}>{new Date(bk.date+"T12:00").toLocaleDateString("es-AR",{weekday:"short",day:"2-digit",month:"2-digit"})}</div>
-                    <div style={{fontSize:13,fontWeight:700}}>{bk.startHour}:00–{bk.endHour}:00</div>
-                  </div>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:13,fontWeight:700}}>{bk.sinCargo?`🎁 ${bk.sinCargoMotivo||"Sin cargo"}`:bk.clientName}{bk.recurrence&&bk.recurrence!="none"&&<span style={{marginLeft:6,fontSize:10,color:"#60a5fa"}}>🔁</span>}</div>
-                    <div style={{fontSize:11,color:"#64748b"}}>{sp.label}{bk.clientOrg?` · ${bk.clientOrg}`:""}</div>
-                    {bk.createdBy&&<div style={{fontSize:9,color:"#334155"}}>Creado por {bk.createdBy} · {fmtDateTime(bk.createdAt)}</div>}
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    {bk.sinCargo?<span style={{fontSize:10,color:"#475569"}}>Sin cargo</span>:(
-                      <>
-                        <div style={{fontSize:14,fontWeight:800,color:"#22c55e"}}>{fmtMoney(bk.totalAmount)}</div>
-                        <div style={{fontSize:9,padding:"2px 8px",borderRadius:20,fontWeight:700,display:"inline-block",marginTop:2,background:pc.bg,color:pc.fg}}>{payLabel(bk)}</div>
-                        {isPast(bk)&&bk.asistio!==null&&<div style={{fontSize:9,fontWeight:700,marginTop:2,color:bk.asistio?"#22c55e":"#ef4444"}}>{bk.asistio?"✓ asistió":"✗ no asistió"}</div>}
-                      </>
-                    )}
-                  </div>
+          {listItems.map(bk=>{
+            const sp=SPACES[bk.space];
+            const pc=payColors(bk);
+            const net=getNetAmount(bk);
+            const isBlq=bk.isBloqueo;
+            return(
+              <div key={bk.id} onClick={()=>openEdit(bk)} style={{background:isBlq?"#1a0d0d":"#111520",border:`1px solid ${isBlq?"#7f1d1d33":sp.color+"2a"}`,borderLeft:`4px solid ${isBlq?"#ef4444":sp.color}`,borderRadius:10,padding:"10px 14px",marginBottom:7,cursor:"pointer",display:"flex",gap:14,alignItems:"center",transition:"background 0.12s"}}
+                onMouseEnter={e=>e.currentTarget.style.background=isBlq?"#220d0d":"#151c2c"}
+                onMouseLeave={e=>e.currentTarget.style.background=isBlq?"#1a0d0d":"#111520"}
+              >
+                <div style={{minWidth:76}}>
+                  <div style={{fontSize:10,color:"#64748b"}}>{new Date(bk.date+"T12:00").toLocaleDateString("es-AR",{weekday:"short",day:"2-digit",month:"2-digit"})}</div>
+                  <div style={{fontSize:13,fontWeight:700}}>{bk.startHour}:00–{bk.endHour}:00</div>
                 </div>
-              );
-            })}
-          {expanded.filter(b=>listFilter==="all"||b.space===listFilter).length===0&&<div style={{textAlign:"center",padding:60,color:"#475569"}}>No hay alquileres.</div>}
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13,fontWeight:700,color:isBlq?"#ef4444":"#e2e8f0"}}>
+                    {isBlq?`🚫 ${bk.bloqueoMotivo||"Bloqueado"}`:bk.sinCargo?`🎁 ${bk.sinCargoMotivo||"Sin cargo"}`:bk.clientName}
+                    {!isBlq&&bk.recurrence&&bk.recurrence!="none"&&<span style={{marginLeft:6,fontSize:10,color:"#60a5fa"}}>🔁</span>}
+                  </div>
+                  <div style={{fontSize:11,color:"#64748b"}}>{sp.label}{!isBlq&&bk.clientOrg?` · ${bk.clientOrg}`:""}</div>
+                  {bk.createdBy&&<div style={{fontSize:9,color:"#334155"}}>por {bk.createdBy}</div>}
+                </div>
+                <div style={{textAlign:"right"}}>
+                  {isBlq?<span style={{fontSize:10,color:"#ef4444",fontWeight:700}}>Bloqueo</span>:
+                  bk.sinCargo?<span style={{fontSize:10,color:"#475569"}}>Sin cargo</span>:(
+                    <>
+                      <div style={{fontSize:14,fontWeight:800,color:"#22c55e"}}>{fmtMoney(net)}</div>
+                      {bk.descuentoTipo&&bk.descuentoTipo!=="none"&&<div style={{fontSize:9,color:"#f59e0b"}}>✂ desc. aplicado</div>}
+                      <div style={{fontSize:9,padding:"2px 8px",borderRadius:20,fontWeight:700,display:"inline-block",marginTop:2,background:pc.bg,color:pc.fg}}>{payLabel(bk)}</div>
+                      {isPast(bk)&&bk.asistio!==null&&<div style={{fontSize:9,fontWeight:700,marginTop:2,color:bk.asistio?"#22c55e":"#ef4444"}}>{bk.asistio?"✓ asistió":"✗ no asistió"}</div>}
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {listItems.length===0&&<div style={{textAlign:"center",padding:60,color:"#475569"}}>No hay registros para este filtro.</div>}
         </div>
-      )}
+        );
+      })()}
 
       {/* ── CLIENTES ── */}
-      {view==="clientes"&&(
-        <div style={{padding:16,maxWidth:800,margin:"0 auto"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-            <span style={{fontSize:13,fontWeight:700,color:"#94a3b8"}}>{clients.length} cliente{clients.length!==1?"s":""}</span>
+      {view==="clientes"&&(()=>{
+        const SPACE_FILTERS=[
+          {v:"all",l:"Todos"},
+          {v:"futbol",l:"⚽ Fútbol (todos)"},
+          {v:"futbol_11",l:"F11"},
+          {v:"futbol_8",l:"F8 (todas)"},
+          {v:"hockey",l:"🏑 Hockey (todos)"},
+          {v:"hockey_11",l:"H11"},
+          {v:"hockey_7",l:"H7 (todas)"},
+          {v:"coworking",l:"💼 Coworking"},
+        ];
+        const SPACE_IDS_MAP={
+          futbol:["futbol_11","futbol_8a","futbol_8b","futbol_8c"],
+          futbol_11:["futbol_11"],
+          futbol_8:["futbol_8a","futbol_8b","futbol_8c"],
+          hockey:["hockey_11","hockey_7a","hockey_7b"],
+          hockey_11:["hockey_11"],
+          hockey_7:["hockey_7a","hockey_7b"],
+          coworking:["coworking_total","sala_10","sala_4a","sala_4b","escritorio"],
+        };
+        const isIncomplete=c=>!c.name||!c.phone||!c.email;
+        let shown=[...clients];
+        if(clientListSearch) shown=shown.filter(c=>(c.name||"").toLowerCase().includes(clientListSearch.toLowerCase())||(c.phone||"").includes(clientListSearch)||(c.email||"").toLowerCase().includes(clientListSearch.toLowerCase()));
+        if(clientFilter==="incompletos") shown=shown.filter(isIncomplete);
+        if(clientSpaceFilter!=="all"){
+          const ids=SPACE_IDS_MAP[clientSpaceFilter]||[clientSpaceFilter];
+          shown=shown.filter(c=>expanded.some(b=>b.clientId===c.id&&ids.includes(b.space)));
+        }
+        shown.sort((a,b)=>{
+          const ha=clientHistory(a.id),hb=clientHistory(b.id);
+          const ta=ha.filter(x=>!x.sinCargo&&!x.isBloqueo).reduce((s,x)=>s+getNetAmount(x),0);
+          const tb=hb.filter(x=>!x.sinCargo&&!x.isBloqueo).reduce((s,x)=>s+getNetAmount(x),0);
+          if(clientSort==="name") return (a.name||"").localeCompare(b.name||"");
+          if(clientSort==="count_desc") return hb.length-ha.length;
+          if(clientSort==="count_asc") return ha.length-hb.length;
+          if(clientSort==="monto_desc") return tb-ta;
+          if(clientSort==="monto_asc") return ta-tb;
+          return 0;
+        });
+        const incompleteCount=clients.filter(isIncomplete).length;
+        return(
+        <div style={{padding:16,maxWidth:860,margin:"0 auto"}}>
+          {/* Header */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+            <span style={{fontSize:13,fontWeight:700,color:"#94a3b8"}}>{shown.length} / {clients.length} clientes{incompleteCount>0&&<span style={{marginLeft:8,fontSize:11,color:"#f59e0b",fontWeight:700}}>⚠ {incompleteCount} incompletos</span>}</span>
             {canEdit&&<button onClick={()=>openClientModal()} style={{background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#000",border:"none",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontWeight:700,fontSize:12}}>+ Nuevo cliente</button>}
           </div>
-          {clients.length===0&&<div style={{textAlign:"center",padding:60,color:"#475569"}}><div style={{fontSize:32,marginBottom:10}}>👥</div><div>Sin clientes aún.</div></div>}
-          {clients.map(c=>{
+          {/* Filtros */}
+          <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+            <input value={clientListSearch} onChange={e=>setClientListSearch(e.target.value)} placeholder="🔍 Buscar por nombre, tel, email…" style={{...inpSt,maxWidth:220}}/>
+            <div style={{display:"flex",background:"#111520",borderRadius:8,padding:3,border:"1px solid #1e2535",gap:2}}>
+              <button onClick={()=>setClientFilter("all")} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,background:clientFilter==="all"?"#22c55e":"transparent",color:clientFilter==="all"?"#000":"#64748b"}}>Todos</button>
+              <button onClick={()=>setClientFilter("incompletos")} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,background:clientFilter==="incompletos"?"#f59e0b":"transparent",color:clientFilter==="incompletos"?"#000":"#64748b"}}>⚠ Incompletos</button>
+            </div>
+            <select value={clientSpaceFilter} onChange={e=>setClientSpaceFilter(e.target.value)} style={selSt}>
+              {SPACE_FILTERS.map(({v,l})=><option key={v} value={v}>{l}</option>)}
+            </select>
+            <select value={clientSort} onChange={e=>setClientSort(e.target.value)} style={selSt}>
+              <option value="count_desc">↓ Más alquileres</option>
+              <option value="count_asc">↑ Menos alquileres</option>
+              <option value="monto_desc">↓ Mayor monto</option>
+              <option value="monto_asc">↑ Menor monto</option>
+              <option value="name">A–Z nombre</option>
+            </select>
+          </div>
+          {shown.length===0&&<div style={{textAlign:"center",padding:60,color:"#475569"}}><div style={{fontSize:32,marginBottom:10}}>👥</div><div>Sin clientes para este filtro.</div></div>}
+          {shown.map(c=>{
             const hist=clientHistory(c.id);
-            const total=hist.filter(b=>!b.sinCargo).reduce((s,b)=>s+(Number(b.totalAmount)||0),0);
+            const total=hist.filter(b=>!b.sinCargo&&!b.isBloqueo).reduce((s,b)=>s+getNetAmount(b),0);
+            const incomplete=isIncomplete(c);
+            const missing=[];
+            if(!c.name) missing.push("nombre");
+            if(!c.phone) missing.push("teléfono");
+            if(!c.email) missing.push("email");
             return(
-              <div key={c.id} onClick={()=>canEdit&&openClientModal(c)} style={{background:"#111520",border:"1px solid #1e2535",borderRadius:12,padding:"14px 16px",marginBottom:10,cursor:canEdit?"pointer":"default",transition:"background 0.12s"}}
+              <div key={c.id} onClick={()=>canEdit&&openClientModal(c)} style={{background:"#111520",border:`1px solid ${incomplete?"#f59e0b33":"#1e2535"}`,borderLeft:`4px solid ${incomplete?"#f59e0b":"#1e2535"}`,borderRadius:12,padding:"14px 16px",marginBottom:8,cursor:canEdit?"pointer":"default",transition:"background 0.12s"}}
                 onMouseEnter={e=>{if(canEdit)e.currentTarget.style.background="#151c2c";}}
                 onMouseLeave={e=>e.currentTarget.style.background="#111520"}
               >
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-                  <div><div style={{fontSize:15,fontWeight:800}}>{c.name}</div>{c.org&&<div style={{fontSize:11,color:"#64748b"}}>{c.org}</div>}</div>
-                  <div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:700,color:"#22c55e"}}>{fmtMoney(total)}</div><div style={{fontSize:10,color:"#475569"}}>{hist.length} alquiler{hist.length!==1?"es":""}</div></div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:15,fontWeight:800,display:"flex",alignItems:"center",gap:8}}>
+                      {c.name||<span style={{color:"#f59e0b",fontStyle:"italic"}}>Sin nombre</span>}
+                      {incomplete&&<span style={{fontSize:10,background:"#f59e0b22",color:"#f59e0b",padding:"2px 7px",borderRadius:20,fontWeight:700}}>⚠ falta: {missing.join(", ")}</span>}
+                    </div>
+                    {c.org&&<div style={{fontSize:11,color:"#64748b"}}>{c.org}</div>}
+                  </div>
+                  <div style={{textAlign:"right",marginLeft:12}}>
+                    <div style={{fontSize:13,fontWeight:700,color:"#22c55e"}}>{fmtMoney(total)}</div>
+                    <div style={{fontSize:10,color:"#475569"}}>{hist.length} alquiler{hist.length!==1?"es":""}</div>
+                  </div>
                 </div>
                 <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
-                  {c.phone&&<span style={{fontSize:11,color:"#64748b"}}>📱 {c.phone}</span>}
-                  {c.email&&<span style={{fontSize:11,color:"#64748b"}}>✉ {c.email}</span>}
+                  {c.phone?<span style={{fontSize:11,color:"#64748b"}}>📱 {c.phone}</span>:<span style={{fontSize:11,color:"#f59e0b55"}}>📱 sin tel.</span>}
+                  {c.email?<span style={{fontSize:11,color:"#64748b"}}>✉ {c.email}</span>:<span style={{fontSize:11,color:"#f59e0b55"}}>✉ sin email</span>}
                 </div>
-                {hist.length>0&&<div style={{marginTop:8,display:"flex",gap:5,flexWrap:"wrap"}}>{hist.slice(-4).map(bk=><span key={bk.id} style={{fontSize:9,background:"#1e2535",borderRadius:6,padding:"2px 7px",color:"#64748b"}}>{new Date(bk.date+"T12:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})} · {SPACES[bk.space]?.short}</span>)}{hist.length>4&&<span style={{fontSize:9,color:"#475569"}}>+{hist.length-4} más</span>}</div>}
+                {hist.length>0&&<div style={{marginTop:8,display:"flex",gap:5,flexWrap:"wrap"}}>{hist.slice(-5).map(bk=><span key={bk.id} style={{fontSize:9,background:"#1e2535",borderRadius:6,padding:"2px 7px",color:"#64748b"}}>{new Date(bk.date+"T12:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})} · {SPACES[bk.space]?.short}</span>)}{hist.length>5&&<span style={{fontSize:9,color:"#475569"}}>+{hist.length-5} más</span>}</div>}
               </div>
             );
           })}
         </div>
-      )}
+        );
+      })()}
 
       {/* ── FINANZAS ── */}
       {view==="finanzas"&&canFinance&&(
@@ -926,11 +1076,31 @@ export default function App() {
               </div>
             )}
 
+            {/* Tipo de entrada */}
+            <div style={{display:"flex",gap:6,marginBottom:14}}>
+              {[{v:false,l:"📅 Alquiler"},{v:true,l:"🚫 Bloquear espacio"}].map(({v,l})=>(
+                <button key={String(v)} onClick={()=>setForm(f=>({...f,isBloqueo:v}))} style={{flex:1,padding:"8px",borderRadius:8,border:`2px solid ${form.isBloqueo===v?(v?"#ef4444":"#22c55e"):"#2a2f3e"}`,background:form.isBloqueo===v?(v?"#ef444418":"#22c55e18"):"transparent",color:form.isBloqueo===v?(v?"#ef4444":"#22c55e"):"#64748b",cursor:"pointer",fontWeight:700,fontSize:12}}>{l}</button>
+              ))}
+            </div>
+            {form.isBloqueo?(
+              <FG label="Motivo del bloqueo *">
+                <input value={form.bloqueoMotivo||""} onChange={e=>setForm(f=>({...f,bloqueoMotivo:e.target.value}))} placeholder="Ej: Academia, Torneo nocturno…" style={{...inpSt,borderColor:!(form.bloqueoMotivo||"").trim()?"#ef444466":"#2a2f3e"}}/>
+                {!(form.bloqueoMotivo||"").trim()&&<div style={{fontSize:10,color:"#ef4444",marginTop:3}}>Requerido</div>}
+              </FG>
+            ):(
+              <>
             <label style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,cursor:"pointer",background:form.sinCargo?"#22c55e0d":"#1a1f2e",padding:"9px 12px",borderRadius:10,border:`1px solid ${form.sinCargo?"#22c55e44":"#2a2f3e"}`}}>
               <input type="checkbox" checked={form.sinCargo} onChange={e=>setForm(f=>({...f,sinCargo:e.target.checked}))} style={{width:15,height:15,accentColor:"#22c55e"}}/>
               <div><div style={{fontSize:13,fontWeight:700,color:form.sinCargo?"#22c55e":"#94a3b8"}}>🎁 Sin cargo</div><div style={{fontSize:10,color:"#475569"}}>Cortesía, uso interno…</div></div>
             </label>
-            {form.sinCargo&&<FG label="Motivo"><input value={form.sinCargoMotivo} onChange={e=>setForm(f=>({...f,sinCargoMotivo:e.target.value}))} placeholder="Ej: cortesía sponsor…" style={inpSt}/></FG>}
+            {form.sinCargo&&(
+              <FG label="Motivo del sin cargo *">
+                <input value={form.sinCargoMotivo||""} onChange={e=>setForm(f=>({...f,sinCargoMotivo:e.target.value}))} placeholder="Ej: cortesía sponsor, uso interno…" style={{...inpSt,borderColor:!(form.sinCargoMotivo||"").trim()?"#ef444466":"#2a2f3e"}}/>
+                {!(form.sinCargoMotivo||"").trim()&&<div style={{fontSize:10,color:"#ef4444",marginTop:3}}>Requerido para guardar</div>}
+              </FG>
+            )}
+              </>
+            )}
 
             <FG label="Espacio">
               <select value={form.space} onChange={e=>{const sp=SPACES[e.target.value];setForm(f=>({...f,space:e.target.value,totalAmount:sp.price!=null?sp.price:f.totalAmount}));}} style={inpSt}>
@@ -958,7 +1128,7 @@ export default function App() {
               {form.recurrence==="until"&&<div style={{marginTop:10,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:12,color:"#64748b"}}>Hasta:</span><input type="date" value={form.recurrenceUntil} onChange={e=>setForm(f=>({...f,recurrenceUntil:e.target.value}))} style={{...inpSt,width:"auto"}}/></div>}
             </div>
 
-            {!form.sinCargo&&(
+            {!form.isBloqueo&&!form.sinCargo&&(
               <>
                 <div style={{borderTop:"1px solid #1e2535",margin:"10px 0"}}/>
                 <div style={{fontSize:9,color:"#475569",textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Cliente</div>
@@ -989,18 +1159,37 @@ export default function App() {
                   <FG label="Seña acordada ($)"><input type="number" value={form.señaAmount} onChange={e=>setForm(f=>({...f,señaAmount:e.target.value}))} placeholder="40000" style={inpSt}/></FG>
                 </div>
 
+                {/* Descuento */}
+                <div style={{background:"#1a1f2e",borderRadius:10,padding:"10px 12px",marginBottom:10,border:"1px solid #2a2f3e"}}>
+                  <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>🏷 Descuento</div>
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>
+                    {[["none","Sin descuento"],["pct","% Porcentaje"],["monto","$ Fijo"]].map(([v,l])=>(
+                      <button key={v} onClick={()=>setForm(f=>({...f,descuentoTipo:v,descuentoValor:""}))} style={{padding:"4px 10px",borderRadius:20,border:"1px solid",fontSize:11,cursor:"pointer",borderColor:form.descuentoTipo===v?"#f59e0b":"#2a2f3e",background:form.descuentoTipo===v?"#f59e0b22":"transparent",color:form.descuentoTipo===v?"#f59e0b":"#64748b",fontWeight:600}}>{l}</button>
+                    ))}
+                  </div>
+                  {form.descuentoTipo!=="none"&&(
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <input type="number" value={form.descuentoValor} onChange={e=>setForm(f=>({...f,descuentoValor:e.target.value}))} placeholder={form.descuentoTipo==="pct"?"10":"5000"} style={{...inpSt,width:90}}/>
+                      <span style={{fontSize:11,color:"#64748b"}}>{form.descuentoTipo==="pct"?"%":"ARS"}</span>
+                      {Number(form.totalAmount)>0&&Number(form.descuentoValor)>0&&(
+                        <span style={{fontSize:13,fontWeight:800,color:"#22c55e"}}>→ {fmtMoney(getNetAmount(form))}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 {/* Saldo calculado */}
                 {Number(form.totalAmount)>0&&Number(form.señaAmount)>0&&(
                   <div style={{background:"#1a1f2e",borderRadius:8,padding:"8px 12px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <span style={{fontSize:11,color:"#64748b"}}>Saldo a cobrar el día del partido</span>
-                    <span style={{fontSize:14,fontWeight:800,color:"#60a5fa"}}>{fmtMoney(Number(form.totalAmount)-Number(form.señaAmount))}</span>
+                    <span style={{fontSize:14,fontWeight:800,color:"#60a5fa"}}>{fmtMoney(getNetAmount(form)-Number(form.señaAmount))}</span>
                   </div>
                 )}
 
                 {/* Pagos recibidos */}
                 {(()=>{
                   const pagos=form.pagos||[];
-                  const total=Number(form.totalAmount)||0;
+                  const total=getNetAmount(form);
                   const totalPagado=pagos.reduce((s,p)=>s+(Number(p.monto)||0),0);
                   const restante=total-totalPagado;
                   return(
@@ -1012,7 +1201,7 @@ export default function App() {
                             <div key={p.id} style={{display:"flex",alignItems:"center",gap:8,background:"#1a1f2e",borderRadius:7,padding:"6px 10px",marginBottom:4}}>
                               <span style={{fontSize:10,color:"#64748b",minWidth:34}}>{p.fecha?new Date(p.fecha+"T12:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—"}</span>
                               <span style={{fontSize:13,fontWeight:700,color:"#22c55e",flex:1}}>{fmtMoney(p.monto)}</span>
-                              {p.forma&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:"#1e2535",color:"#64748b",fontWeight:600}}>{{efectivo:"💵 Efectivo",transferencia:"🏦 Transfer.",debito:"💳 Débito",credito:"💳 Crédito"}[p.forma]||p.forma}</span>}
+                              {p.forma&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:"#1e2535",color:"#64748b",fontWeight:600}}>{{efectivo:"💵 Efectivo",transferencia:"🏦 Transfer.",debito:"💳 Débito",credito:"💳 Crédito",cuentacorriente:"📒 Cta.Cte."}[p.forma]||p.forma}</span>}
                               {p.nota&&<span style={{fontSize:10,color:"#475569"}}>{p.nota}</span>}
                               {canEdit&&<button onClick={()=>setForm(f=>({...f,pagos:f.pagos.filter(x=>x.id!==p.id)}))} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:15,padding:0,lineHeight:1}}>×</button>}
                             </div>
@@ -1039,7 +1228,7 @@ export default function App() {
                           <div style={{marginBottom:8}}>
                             <FG label="Forma de pago">
                               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                                {[["efectivo","💵 Efectivo"],["transferencia","🏦 Transferencia"],["debito","💳 Débito"],["credito","💳 Crédito"]].map(([v,l])=>(
+                                {[["efectivo","💵 Efectivo"],["transferencia","🏦 Transf."],["debito","💳 Débito"],["credito","💳 Crédito"],["cuentacorriente","📒 Cta. Cte."]].map(([v,l])=>(
                                   <button key={v} type="button" onClick={()=>setForm(f=>({...f,newPagoForma:v}))} style={{padding:"5px 10px",borderRadius:20,border:"1px solid",fontSize:11,cursor:"pointer",borderColor:(form.newPagoForma||"efectivo")===v?"#60a5fa":"#2a2f3e",background:(form.newPagoForma||"efectivo")===v?"#60a5fa22":"transparent",color:(form.newPagoForma||"efectivo")===v?"#60a5fa":"#64748b",fontWeight:600}}>{l}</button>
                                 ))}
                               </div>
@@ -1098,7 +1287,10 @@ export default function App() {
               {editing&&isAdmin&&<button onClick={()=>del(editing.id)} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #ef444444",background:"#ef444410",color:"#ef4444",cursor:"pointer",fontSize:12}}>Eliminar</button>}
               <div style={{flex:1}}/>
               <button onClick={()=>setModal(false)} style={{padding:"8px 16px",borderRadius:8,border:"1px solid #2a2f3e",background:"transparent",color:"#94a3b8",cursor:"pointer",fontSize:12}}>Cancelar</button>
-              {canEdit&&<button onClick={save} disabled={!form.sinCargo&&(!form.clientName||!form.date)} style={{padding:"8px 20px",borderRadius:8,border:"none",fontSize:12,fontWeight:700,cursor:"pointer",background:(!form.sinCargo&&(!form.clientName||!form.date))?"#1e2535":"linear-gradient(135deg,#22c55e,#16a34a)",color:(!form.sinCargo&&(!form.clientName||!form.date))?"#475569":"#000"}}>{editing?"Guardar":"Crear alquiler"}</button>}
+              {canEdit&&(()=>{
+                const disabled=!form.date||(form.isBloqueo&&!(form.bloqueoMotivo||"").trim())||(!form.isBloqueo&&!form.sinCargo&&!form.clientName)||(!form.isBloqueo&&form.sinCargo&&!(form.sinCargoMotivo||"").trim());
+                return<button onClick={save} disabled={disabled} style={{padding:"8px 20px",borderRadius:8,border:"none",fontSize:12,fontWeight:700,cursor:"pointer",background:disabled?"#1e2535":"linear-gradient(135deg,#22c55e,#16a34a)",color:disabled?"#475569":"#000"}}>{editing?"Guardar":form.isBloqueo?"Bloquear":"Crear alquiler"}</button>;
+              })()}
             </div>
           </div>
         </div>

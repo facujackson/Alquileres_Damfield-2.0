@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Importar bloqueos - Damfield</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 60px auto; padding: 20px; background: #0f0f0f; color: #eee; }
+  h1 { color: #fff; font-size: 20px; }
+  p { color: #aaa; line-height: 1.6; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 16px 0; }
+  th { background: #1e2535; color: #64748b; padding: 6px 10px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+  td { padding: 6px 10px; border-bottom: 1px solid #1a1f2e; color: #e2e8f0; }
+  .space { color: #60a5fa; font-weight: 700; }
+  .red { color: #ef4444; }
+  button { background: #22c55e; color: #000; border: none; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; margin-top: 16px; }
+  button:disabled { background: #444; color: #888; cursor: not-allowed; }
+  #log { margin-top: 20px; background: #1a1a1a; border-radius: 8px; padding: 14px; font-family: monospace; font-size: 12px; min-height: 60px; white-space: pre-wrap; color: #4ade80; }
+  .warn { color: #facc15; }
+</style>
+</head>
+<body>
+<h1>🚫 Importar bloqueos recurrentes</h1>
+<p>Carga <strong>10 bloqueos semanales</strong> (con recurrencia) al calendario de Damfield.</p>
+
+<table>
+  <tr><th>Espacio</th><th>Día</th><th>Horario</th><th>Motivo</th><th>Hasta</th></tr>
+  <tr><td class="space">Fútbol 8 A</td><td>Lunes</td><td>16-20h</td><td>Futsal</td><td>31/12/2026</td></tr>
+  <tr><td class="space">Fútbol 11</td><td>Martes</td><td>17-22h</td><td class="red">Copa Damfield</td><td>31/07/2026</td></tr>
+  <tr><td class="space">Fútbol 11</td><td>Martes (desde ago)</td><td>17-20h</td><td>Academias Damfield</td><td>31/12/2026</td></tr>
+  <tr><td class="space">Fútbol 8 A</td><td>Miércoles</td><td>16-20h</td><td>Futsal</td><td>31/12/2026</td></tr>
+  <tr><td class="space">Fútbol 11</td><td>Jueves</td><td>17-20h</td><td>Academias Damfield</td><td>31/12/2026</td></tr>
+  <tr><td class="space">Fútbol 8 A</td><td>Viernes</td><td>16-20h</td><td>Futsal</td><td>31/12/2026</td></tr>
+  <tr><td class="space">Fútbol 8 A</td><td>Viernes</td><td>19-21h</td><td>Fútbol Femenino</td><td>31/12/2026</td></tr>
+  <tr><td class="space">Hockey 7 A</td><td>Martes</td><td>17-22h</td><td>Academias Damfield</td><td>31/12/2026</td></tr>
+  <tr><td class="space">Hockey 7 A</td><td>Jueves</td><td>17-22h</td><td>Academias Damfield</td><td>31/12/2026</td></tr>
+  <tr><td class="space">Hockey 7 A</td><td>Viernes</td><td>18-21h</td><td>Academias Damfield</td><td>31/12/2026</td></tr>
+</table>
+
+<p class="warn" style="color:#facc15;font-size:13px">⚠ Ejecutar solo una vez. Los horarios 17:30/18:30/19:30/20:30/21:30 se redondearon a la hora entera más cercana.</p>
+<button id="btn" onclick="doImport()">Importar bloqueos</button>
+<div id="log">Listo para importar...</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { getDatabase, ref, get, set } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCaVD8uIUxqGAI6kntNj_YRlHotmdyvBqA",
+  authDomain: "damfield-alquileres.firebaseapp.com",
+  projectId: "damfield-alquileres",
+  databaseURL: "https://damfield-alquileres-default-rtdb.firebaseio.com"
+};
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const PREFIX = 'damfield-alquileres:';
+const BLOQUEOS = [{"id": "b_blq_1800000000001", "space": "futbol_8a", "date": "2026-07-06", "startHour": 16, "endHour": 20, "isBloqueo": true, "bloqueoMotivo": "Futsal", "recurrence": "until", "recurrenceUntil": "2026-12-31", "recurrenceCount": 52, "clientId": "", "clientName": "", "clientPhone": "", "clientEmail": "", "clientOrg": "", "totalAmount": "", "señaAmount": "", "descuentoTipo": "none", "descuentoValor": "", "pagos": [], "asistio": null, "sinCargo": false, "sinCargoMotivo": "", "notes": "", "paymentType": "seña_saldo", "saldoPaid": false, "createdBy": "Sistema", "createdAt": "2026-07-05T00:00:00.000Z", "updatedBy": "Sistema", "updatedAt": "2026-07-05T00:00:00.000Z", "history": []}, {"id": "b_blq_1800000000002", "space": "futbol_11", "date": "2026-07-07", "startHour": 17, "endHour": 22, "isBloqueo": true, "bloqueoMotivo": "Copa Damfield", "recurrence": "until", "recurrenceUntil": "2026-07-31", "recurrenceCount": 52, "clientId": "", "clientName": "", "clientPhone": "", "clientEmail": "", "clientOrg": "", "totalAmount": "", "señaAmount": "", "descuentoTipo": "none", "descuentoValor": "", "pagos": [], "asistio": null, "sinCargo": false, "sinCargoMotivo": "", "notes": "", "paymentType": "seña_saldo", "saldoPaid": false, "createdBy": "Sistema", "createdAt": "2026-07-05T00:00:00.000Z", "updatedBy": "Sistema", "updatedAt": "2026-07-05T00:00:00.000Z", "history": []}, {"id": "b_blq_1800000000003", "space": "futbol_11", "date": "2026-08-04", "startHour": 17, "endHour": 20, "isBloqueo": true, "bloqueoMotivo": "Academias Damfield", "recurrence": "until", "recurrenceUntil": "2026-12-31", "recurrenceCount": 52, "clientId": "", "clientName": "", "clientPhone": "", "clientEmail": "", "clientOrg": "", "totalAmount": "", "señaAmount": "", "descuentoTipo": "none", "descuentoValor": "", "pagos": [], "asistio": null, "sinCargo": false, "sinCargoMotivo": "", "notes": "", "paymentType": "seña_saldo", "saldoPaid": false, "createdBy": "Sistema", "createdAt": "2026-07-05T00:00:00.000Z", "updatedBy": "Sistema", "updatedAt": "2026-07-05T00:00:00.000Z", "history": []}, {"id": "b_blq_1800000000004", "space": "futbol_8a", "date": "2026-07-08", "startHour": 16, "endHour": 20, "isBloqueo": true, "bloqueoMotivo": "Futsal", "recurrence": "until", "recurrenceUntil": "2026-12-31", "recurrenceCount": 52, "clientId": "", "clientName": "", "clientPhone": "", "clientEmail": "", "clientOrg": "", "totalAmount": "", "señaAmount": "", "descuentoTipo": "none", "descuentoValor": "", "pagos": [], "asistio": null, "sinCargo": false, "sinCargoMotivo": "", "notes": "", "paymentType": "seña_saldo", "saldoPaid": false, "createdBy": "Sistema", "createdAt": "2026-07-05T00:00:00.000Z", "updatedBy": "Sistema", "updatedAt": "2026-07-05T00:00:00.000Z", "history": []}, {"id": "b_blq_1800000000005", "space": "futbol_11", "date": "2026-07-09", "startHour": 17, "endHour": 20, "isBloqueo": true, "bloqueoMotivo": "Academias Damfield", "recurrence": "until", "recurrenceUntil": "2026-12-31", "recurrenceCount": 52, "clientId": "", "clientName": "", "clientPhone": "", "clientEmail": "", "clientOrg": "", "totalAmount": "", "señaAmount": "", "descuentoTipo": "none", "descuentoValor": "", "pagos": [], "asistio": null, "sinCargo": false, "sinCargoMotivo": "", "notes": "", "paymentType": "seña_saldo", "saldoPaid": false, "createdBy": "Sistema", "createdAt": "2026-07-05T00:00:00.000Z", "updatedBy": "Sistema", "updatedAt": "2026-07-05T00:00:00.000Z", "history": []}, {"id": "b_blq_1800000000006", "space": "futbol_8a", "date": "2026-07-10", "startHour": 16, "endHour": 20, "isBloqueo": true, "bloqueoMotivo": "Futsal", "recurrence": "until", "recurrenceUntil": "2026-12-31", "recurrenceCount": 52, "clientId": "", "clientName": "", "clientPhone": "", "clientEmail": "", "clientOrg": "", "totalAmount": "", "señaAmount": "", "descuentoTipo": "none", "descuentoValor": "", "pagos": [], "asistio": null, "sinCargo": false, "sinCargoMotivo": "", "notes": "", "paymentType": "seña_saldo", "saldoPaid": false, "createdBy": "Sistema", "createdAt": "2026-07-05T00:00:00.000Z", "updatedBy": "Sistema", "updatedAt": "2026-07-05T00:00:00.000Z", "history": []}, {"id": "b_blq_1800000000007", "space": "futbol_8a", "date": "2026-07-10", "startHour": 19, "endHour": 21, "isBloqueo": true, "bloqueoMotivo": "Fútbol Femenino", "recurrence": "until", "recurrenceUntil": "2026-12-31", "recurrenceCount": 52, "clientId": "", "clientName": "", "clientPhone": "", "clientEmail": "", "clientOrg": "", "totalAmount": "", "señaAmount": "", "descuentoTipo": "none", "descuentoValor": "", "pagos": [], "asistio": null, "sinCargo": false, "sinCargoMotivo": "", "notes": "", "paymentType": "seña_saldo", "saldoPaid": false, "createdBy": "Sistema", "createdAt": "2026-07-05T00:00:00.000Z", "updatedBy": "Sistema", "updatedAt": "2026-07-05T00:00:00.000Z", "history": []}, {"id": "b_blq_1800000000008", "space": "hockey_7a", "date": "2026-07-07", "startHour": 17, "endHour": 22, "isBloqueo": true, "bloqueoMotivo": "Academias Damfield", "recurrence": "until", "recurrenceUntil": "2026-12-31", "recurrenceCount": 52, "clientId": "", "clientName": "", "clientPhone": "", "clientEmail": "", "clientOrg": "", "totalAmount": "", "señaAmount": "", "descuentoTipo": "none", "descuentoValor": "", "pagos": [], "asistio": null, "sinCargo": false, "sinCargoMotivo": "", "notes": "", "paymentType": "seña_saldo", "saldoPaid": false, "createdBy": "Sistema", "createdAt": "2026-07-05T00:00:00.000Z", "updatedBy": "Sistema", "updatedAt": "2026-07-05T00:00:00.000Z", "history": []}, {"id": "b_blq_1800000000009", "space": "hockey_7a", "date": "2026-07-09", "startHour": 17, "endHour": 22, "isBloqueo": true, "bloqueoMotivo": "Academias Damfield", "recurrence": "until", "recurrenceUntil": "2026-12-31", "recurrenceCount": 52, "clientId": "", "clientName": "", "clientPhone": "", "clientEmail": "", "clientOrg": "", "totalAmount": "", "señaAmount": "", "descuentoTipo": "none", "descuentoValor": "", "pagos": [], "asistio": null, "sinCargo": false, "sinCargoMotivo": "", "notes": "", "paymentType": "seña_saldo", "saldoPaid": false, "createdBy": "Sistema", "createdAt": "2026-07-05T00:00:00.000Z", "updatedBy": "Sistema", "updatedAt": "2026-07-05T00:00:00.000Z", "history": []}, {"id": "b_blq_1800000000010", "space": "hockey_7a", "date": "2026-07-10", "startHour": 18, "endHour": 21, "isBloqueo": true, "bloqueoMotivo": "Academias Damfield", "recurrence": "until", "recurrenceUntil": "2026-12-31", "recurrenceCount": 52, "clientId": "", "clientName": "", "clientPhone": "", "clientEmail": "", "clientOrg": "", "totalAmount": "", "señaAmount": "", "descuentoTipo": "none", "descuentoValor": "", "pagos": [], "asistio": null, "sinCargo": false, "sinCargoMotivo": "", "notes": "", "paymentType": "seña_saldo", "saldoPaid": false, "createdBy": "Sistema", "createdAt": "2026-07-05T00:00:00.000Z", "updatedBy": "Sistema", "updatedAt": "2026-07-05T00:00:00.000Z", "history": []}];
+
+function log(msg, cls='') {
+  const el = document.getElementById('log');
+  el.innerHTML += (cls ? `<span style="color:${cls}">${msg}</span>` : msg) + '\n';
+}
+
+window.doImport = async function() {
+  const btn = document.getElementById('btn');
+  btn.disabled = true;
+  document.getElementById('log').innerHTML = '';
+  try {
+    log('🔌 Conectando a Firebase...');
+    const snap = await get(ref(db, PREFIX + 'bookings'));
+    let existing = [];
+    if (snap.exists()) { try { existing = JSON.parse(snap.val()); } catch(e) {} }
+    log(`Reservas existentes: ${existing.length}`);
+    const existingIds = new Set(existing.map(b => b.id));
+    const newOnes = BLOQUEOS.filter(b => !existingIds.has(b.id));
+    log(`Bloqueos a agregar: ${newOnes.length}`);
+    const merged = [...existing, ...newOnes];
+    await set(ref(db, PREFIX + 'bookings'), JSON.stringify(merged));
+    log(`✅ Guardado! Total reservas: ${merged.length}`);
+    log('\n🎉 ¡Listo! Abrí la app y vas a ver los bloqueos en el calendario.');
+    btn.textContent = '✅ Completado';
+  } catch(err) {
+    log('❌ Error: ' + err.message, '#ef4444');
+    btn.disabled = false;
+  }
+};
+</script>
+</body>
+</html>
