@@ -321,7 +321,8 @@ export default function App() {
     const who=currentUser?.name||"?";
     if(!existing) return {createdBy:who,createdAt:now,updatedBy:who,updatedAt:now,history:[{action:"Creado",by:who,at:now}]};
     const h=[...(existing.history||[]),{action:"Modificado",by:who,at:now}];
-    return {...existing,updatedBy:who,updatedAt:now,history:h};
+    // Solo devuelve campos de auditoría, sin pisar los datos nuevos del formulario
+    return {createdBy:existing.createdBy||who,createdAt:existing.createdAt||now,updatedBy:who,updatedAt:now,history:h};
   }
 
   // ── Booking ops ──
@@ -411,9 +412,11 @@ export default function App() {
     if(finPeriod==="semana"){
       const wk=weekDates.map(d=>dateKey(d));
       filtered=filtered.filter(b=>wk.includes(b.date));
-    } else {
+    } else if(finPeriod==="mes"){
       const prefix=`${now.getFullYear()}-${pad(now.getMonth()+1)}`;
       filtered=filtered.filter(b=>b.date.startsWith(prefix));
+    } else if(finPeriod==="año"){
+      filtered=filtered.filter(b=>b.date.startsWith(String(now.getFullYear())));
     }
     const total   =filtered.reduce((s,b)=>s+(Number(b.totalAmount)||0),0);
     const cobrado=filtered.reduce((s,b)=>s+getTotalPagado(b),0);
@@ -425,7 +428,14 @@ export default function App() {
       bySpace[b.space].cobrado+=getTotalPagado(b);
     });
     const pending=filtered.filter(b=>!b.sinCargo&&(Number(b.totalAmount)||0)-getTotalPagado(b)>0);
-    return {total,cobrado,pendiente:total-cobrado,bySpace,count:filtered.length,pending,filtered};
+    const FORMAS=[["efectivo","💵 Efectivo"],["transferencia","🏦 Transferencia"],["debito","💳 Débito"],["credito","💳 Crédito"]];
+    const byForma={efectivo:0,transferencia:0,debito:0,credito:0};
+    filtered.forEach(b=>{
+      if(b.pagos&&b.pagos.length>0){
+        b.pagos.forEach(p=>{ const f=p.forma||"efectivo"; if(byForma[f]!==undefined) byForma[f]+=(Number(p.monto)||0); });
+      }
+    });
+    return {total,cobrado,pendiente:total-cobrado,bySpace,count:filtered.length,pending,filtered,byForma,FORMAS};
   },[expanded,finPeriod,weekDates]);
 
   const conflict = form.date ? hasConflict(expanded,form.date,form.startHour,form.endHour,form.space,editing?.id) : false;
@@ -737,7 +747,7 @@ export default function App() {
         <div style={{padding:16,maxWidth:900,margin:"0 auto"}}>
           <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap",alignItems:"center"}}>
             <div style={{display:"flex",background:"#111520",borderRadius:8,padding:3,border:"1px solid #1e2535"}}>
-              {[ ["semana","Esta semana"], ["mes","Este mes"] ].map(([v,l])=>(
+              {[["semana","Esta semana"],["mes","Este mes"],["año","Este año"]].map(([v,l])=>(
                 <button key={v} onClick={()=>setFinPeriod(v)} style={{padding:"5px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,background:finPeriod===v?"#22c55e":"transparent",color:finPeriod===v?"#000":"#64748b"}}>{l}</button>
               ))}
             </div>
@@ -756,6 +766,24 @@ export default function App() {
               </div>
             ))}
           </div>
+
+          {/* Formas de pago */}
+          {finData.cobrado>0&&(
+            <div style={{marginBottom:20}}>
+              <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Cobrado por forma de pago</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}}>
+                {finData.FORMAS.map(([f,l])=>finData.byForma[f]>0&&(
+                  <div key={f} style={{background:"#111520",border:"1px solid #1e2535",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontSize:12,color:"#94a3b8"}}>{l}</span>
+                    <span style={{fontSize:15,fontWeight:800,color:"#22c55e"}}>{fmtMoney(finData.byForma[f])}</span>
+                  </div>
+                ))}
+                {finData.FORMAS.every(([f])=>!finData.byForma[f])&&(
+                  <div style={{gridColumn:"1/-1",fontSize:11,color:"#475569",padding:"8px 0"}}>Sin pagos registrados con forma de pago en este período.</div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Saldos pendientes — útil para cierre de caja */}
           {finData.pending.length>0&&(
@@ -968,6 +996,7 @@ export default function App() {
                             <div key={p.id} style={{display:"flex",alignItems:"center",gap:8,background:"#1a1f2e",borderRadius:7,padding:"6px 10px",marginBottom:4}}>
                               <span style={{fontSize:10,color:"#64748b",minWidth:34}}>{p.fecha?new Date(p.fecha+"T12:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—"}</span>
                               <span style={{fontSize:13,fontWeight:700,color:"#22c55e",flex:1}}>{fmtMoney(p.monto)}</span>
+                              {p.forma&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:"#1e2535",color:"#64748b",fontWeight:600}}>{{efectivo:"💵 Efectivo",transferencia:"🏦 Transfer.",debito:"💳 Débito",credito:"💳 Crédito"}[p.forma]||p.forma}</span>}
                               {p.nota&&<span style={{fontSize:10,color:"#475569"}}>{p.nota}</span>}
                               {canEdit&&<button onClick={()=>setForm(f=>({...f,pagos:f.pagos.filter(x=>x.id!==p.id)}))} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:15,padding:0,lineHeight:1}}>×</button>}
                             </div>
@@ -991,11 +1020,20 @@ export default function App() {
                             <FG label="Monto ($)"><input type="number" value={form.newPagoMonto} onChange={e=>setForm(f=>({...f,newPagoMonto:e.target.value}))} placeholder={restante>0?String(restante):"0"} style={inpSt}/></FG>
                             <FG label="Fecha"><input type="date" value={form.newPagoFecha||dateKey(new Date())} onChange={e=>setForm(f=>({...f,newPagoFecha:e.target.value}))} style={inpSt}/></FG>
                           </div>
+                          <div style={{marginBottom:8}}>
+                            <FG label="Forma de pago">
+                              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                                {[["efectivo","💵 Efectivo"],["transferencia","🏦 Transferencia"],["debito","💳 Débito"],["credito","💳 Crédito"]].map(([v,l])=>(
+                                  <button key={v} type="button" onClick={()=>setForm(f=>({...f,newPagoForma:v}))} style={{padding:"5px 10px",borderRadius:20,border:"1px solid",fontSize:11,cursor:"pointer",borderColor:(form.newPagoForma||"efectivo")===v?"#60a5fa":"#2a2f3e",background:(form.newPagoForma||"efectivo")===v?"#60a5fa22":"transparent",color:(form.newPagoForma||"efectivo")===v?"#60a5fa":"#64748b",fontWeight:600}}>{l}</button>
+                                ))}
+                              </div>
+                            </FG>
+                          </div>
                           <button onClick={()=>{
                             if(!form.newPagoMonto) return;
-                            const p={id:"p_"+Date.now(),monto:Number(form.newPagoMonto),fecha:form.newPagoFecha||dateKey(new Date()),nota:""};
+                            const p={id:"p_"+Date.now(),monto:Number(form.newPagoMonto),fecha:form.newPagoFecha||dateKey(new Date()),forma:form.newPagoForma||"efectivo",nota:""};
                             const newPagos=[...(form.pagos||[]),p];
-                            const updatedForm={...form,pagos:newPagos,newPagoMonto:"",newPagoFecha:""};
+                            const updatedForm={...form,pagos:newPagos,newPagoMonto:"",newPagoFecha:"",newPagoForma:""};
                             setForm(updatedForm);
                             // Guarda inmediatamente si es una reserva existente
                             if(editing){
@@ -1020,12 +1058,20 @@ export default function App() {
                 <div style={{borderTop:"1px solid #1e2535",margin:"10px 0"}}/>
                 <div style={{fontSize:9,color:"#475569",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Asistencia</div>
                 <div style={{display:"flex",gap:8,marginBottom:12}}>
-                  <button onClick={()=>setForm(f=>({...f,asistio:f.asistio===true?null:true}))} style={{flex:1,padding:"10px",borderRadius:8,border:`2px solid ${form.asistio===true?"#22c55e":"#2a2f3e"}`,background:form.asistio===true?"#22c55e22":"transparent",color:form.asistio===true?"#22c55e":"#64748b",cursor:"pointer",fontWeight:700,fontSize:13,transition:"all 0.15s"}}>
-                    ✓ Asistió
-                  </button>
-                  <button onClick={()=>setForm(f=>({...f,asistio:f.asistio===false?null:false}))} style={{flex:1,padding:"10px",borderRadius:8,border:`2px solid ${form.asistio===false?"#ef4444":"#2a2f3e"}`,background:form.asistio===false?"#ef444422":"transparent",color:form.asistio===false?"#ef4444":"#64748b",cursor:"pointer",fontWeight:700,fontSize:13,transition:"all 0.15s"}}>
-                    ✗ No asistió
-                  </button>
+                  {[{val:true,label:"✓ Asistió",activeColor:"#22c55e"},{val:false,label:"✗ No asistió",activeColor:"#ef4444"}].map(({val,label,activeColor})=>(
+                    <button key={String(val)} onClick={()=>{
+                      const newVal=form.asistio===val?null:val;
+                      const updatedForm={...form,asistio:newVal};
+                      setForm(updatedForm);
+                      if(editing){
+                        const existing=bookings.find(b=>b.id===editing.id);
+                        const entry={...updatedForm,id:editing.id,...audit(existing)};
+                        setBookings(prev=>prev.map(b=>b.id===editing.id?entry:b));
+                      }
+                    }} style={{flex:1,padding:"10px",borderRadius:8,border:`2px solid ${form.asistio===val?activeColor:"#2a2f3e"}`,background:form.asistio===val?`${activeColor}22`:"transparent",color:form.asistio===val?activeColor:"#64748b",cursor:"pointer",fontWeight:700,fontSize:13,transition:"all 0.15s"}}>
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </>
             )}
