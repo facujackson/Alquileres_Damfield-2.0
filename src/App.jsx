@@ -25,7 +25,7 @@ const SPACES = {
   hockey_7a:      { id:"hockey_7a",      label:"Hockey 7 — A",    short:"H7A", color:"#60a5fa", group:"hockey",    price:77000  },
   hockey_7b:      { id:"hockey_7b",      label:"Hockey 7 — B",    short:"H7B", color:"#93c5fd", group:"hockey",    price:77000  },
   pausa:          { id:"pausa",          label:"Sector Pausa",    short:"PAU", color:"#f59e0b", group:"otros",     price:null   },
-  coworking_total:{ id:"coworking_total",label:"Coworking total", short:"CWT", color:"#8b5cf6", group:"coworking", price:null   },
+  coworking_total:{ id:"coworking_total",label:"Cowork completo", short:"CWC", color:"#8b5cf6", group:"coworking", price:null   },
   sala_10:        { id:"sala_10",        label:"Sala 10p",        short:"S10", color:"#a78bfa", group:"coworking", price:null   },
   sala_4a:        { id:"sala_4a",        label:"Sala 4-5p A",     short:"S4A", color:"#c4b5fd", group:"coworking", price:null   },
   sala_4b:        { id:"sala_4b",        label:"Sala 4-5p B",     short:"S4B", color:"#ddd6fe", group:"coworking", price:null   },
@@ -42,7 +42,9 @@ const SPACE_GROUPS = [
 const CONFLICT_GROUPS = [
   ["futbol_11","futbol_8a","futbol_8b","futbol_8c"],
   ["hockey_11","hockey_7a","hockey_7b"],
+  ["coworking_total","escritorio"],
 ];
+const ESCRITORIO_MAX = 28;
 
 const ALL_HOURS    = Array.from({length:18},(_,i)=>i+6);
 const DEFAULT_HOURS= [18,19,20,21,22];
@@ -118,11 +120,25 @@ function isBlockedBy(spaceId,expanded,date,hour){
 }
 function hasConflict(expanded,date,sh,eh,spaceId,excludeSeries){
   const dk=typeof date==="string"?date:dateKey(date);
+  const overlaps=b=>!(eh<=b.startHour||sh>=b.endHour);
+  const notExcluded=b=>!(b.seriesId&&b.seriesId===excludeSeries)&&b.id!==excludeSeries&&b.date===dk;
+  // Escritorio: allow up to ESCRITORIO_MAX simultaneous; only conflict with coworking_total
+  if(spaceId==="escritorio"){
+    const existing=expanded.filter(b=>notExcluded(b)&&overlaps(b)&&b.space==="escritorio").length;
+    if(existing>=ESCRITORIO_MAX) return true;
+    return expanded.some(b=>notExcluded(b)&&overlaps(b)&&b.space==="coworking_total");
+  }
+  // Cowork completo: blocked if any escritorio already booked
+  if(spaceId==="coworking_total"){
+    return expanded.some(b=>{
+      if(!notExcluded(b)||!overlaps(b)) return false;
+      if(b.space==="coworking_total") return true;
+      if(b.space==="escritorio") return true;
+      return false;
+    });
+  }
   return expanded.some(b=>{
-    if(b.seriesId&&b.seriesId===excludeSeries) return false;
-    if(b.id===excludeSeries) return false;
-    if(b.date!==dk) return false;
-    if(!(!(eh<=b.startHour||sh>=b.endHour))) return false;
+    if(!notExcluded(b)||!overlaps(b)) return false;
     if(b.space===spaceId) return true;
     for(const g of CONFLICT_GROUPS){
       if(!g.includes(spaceId)||!g.includes(b.space)) continue;
@@ -589,17 +605,19 @@ export default function App() {
                           {weekDates.map((date,di)=>{
                             const dk=dateKey(date);
                             const cellBks=expanded.filter(b=>b.date===dk&&b.space===spaceId&&b.startHour<=hour&&b.endHour>hour);
-                            const isOcc=cellBks.length>0;
+                            const isEscritorio=spaceId==="escritorio";
+                            const isOcc=isEscritorio?cellBks.length>=ESCRITORIO_MAX:cellBks.length>0;
                             const isBlocked=!isOcc&&isBlockedBy(spaceId,expanded,dk,hour);
                             const today=dk===dateKey(new Date());
                             return(
                               <div key={di}
-                                onClick={()=>!isOcc&&!isBlocked&&openNew(date,hour,spaceId)}
-                                style={{borderLeft:"1px solid #0f1219",background:isBlocked?"#17101a":today?"#ffffff03":"transparent",cursor:isOcc||isBlocked||!canEdit?"default":"pointer",position:"relative",minHeight:44,transition:"background 0.1s"}}
+                                onClick={()=>(!isOcc&&!isBlocked||isEscritorio&&cellBks.length<ESCRITORIO_MAX&&!isBlocked)&&openNew(date,hour,spaceId)}
+                                style={{borderLeft:"1px solid #0f1219",background:isBlocked?"#17101a":today?"#ffffff03":"transparent",cursor:(isOcc&&!(isEscritorio&&cellBks.length<ESCRITORIO_MAX))||isBlocked||!canEdit?"default":"pointer",position:"relative",minHeight:44,transition:"background 0.1s"}}
                                 onMouseEnter={e=>{if(!isOcc&&!isBlocked&&canEdit)e.currentTarget.style.background=`${sp.color}10`;}}
                                 onMouseLeave={e=>{e.currentTarget.style.background=isBlocked?"#17101a":today?"#ffffff03":"transparent";}}
                               >
                                 {isBlocked&&!isOcc&&<div style={{position:"absolute",inset:2,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:8,color:"#2d3748"}}>bloqueado</span></div>}
+                                {isEscritorio&&cellBks.length>0&&<div style={{position:"absolute",top:2,right:4,fontSize:9,fontWeight:700,color:cellBks.length>=ESCRITORIO_MAX?"#ef4444":sp.color,background:"#0d1018cc",borderRadius:4,padding:"1px 4px",zIndex:2}}>{cellBks.length}/{ESCRITORIO_MAX}</div>}
                                 {cellBks.map(bk=>{
                                   const isBlq=bk.isBloqueo;
                                   const bg=isBlq?"#3f1a1a":bk.sinCargo?"#1e2535":`${sp.color}22`;
