@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 // ─── STORAGE HELPERS ─────────────────────────────────────────────────────────
 async function dbGet(key) {
@@ -10,9 +10,9 @@ async function dbSet(key, val) {
 
 // ─── USUARIOS POR DEFECTO ────────────────────────────────────────────────────
 const DEFAULT_USERS = [
-  { id: "u1", name: "Administrador", username: "admin",    password: "admin123",   role: "admin",     email: "" },
-  { id: "u2", name: "Vendedor",      username: "vendedor", password: "venta123",   role: "vendedor",  email: "" },
-  { id: "u3", name: "Solo Lectura",  username: "lectura",  password: "lectura123", role: "readonly",  email: "" },
+  { id: "u1", name: "Administrador", username: "admin",    password: "admin123",   role: "admin" },
+  { id: "u2", name: "Vendedor",      username: "vendedor", password: "venta123",   role: "vendedor" },
+  { id: "u3", name: "Solo Lectura",  username: "lectura",  password: "lectura123", role: "readonly" },
 ];
 
 // ─── ESPACIOS ────────────────────────────────────────────────────────────────
@@ -492,7 +492,7 @@ export default function App() {
   const [clientForm,     setClientForm]     = useState({name:"",phone:"",email:"",org:""});
   const [clientSearch,   setClientSearch]   = useState("");
   const [userMgmt,       setUserMgmt]       = useState(false);
-  const [userForm,       setUserForm]       = useState({name:"",username:"",password:"",role:"vendedor",email:""});
+  const [userForm,       setUserForm]       = useState({name:"",username:"",password:"",role:"vendedor"});
   const [editingUser,    setEditingUser]    = useState(null);
   const [auditModal,     setAuditModal]     = useState(null); // booking to show audit
   const [showUserPwd,    setShowUserPwd]    = useState(false);
@@ -511,13 +511,6 @@ export default function App() {
   const [toast,          setToast]          = useState(null); // { msg, type } donde type = 'success' | 'error'
   const [confirmModal,   setConfirmModal]   = useState(null); // { title, body, onConfirm, danger }
   const [modalTab,       setModalTab]       = useState('reserva'); // 'reserva' | 'cliente' | 'cobro'
-  const [activityLog,    setActivityLog]    = useState([]);
-  const [profileModal,   setProfileModal]   = useState(false);
-  const [profileForm,    setProfileForm]    = useState({email:"",currentPwd:"",newPwd:"",confirmPwd:""});
-  const [showProfilePwd, setShowProfilePwd] = useState({cur:false,nw:false,cf:false});
-  const [profileError,   setProfileError]   = useState("");
-  const [profileSuccess, setProfileSuccess] = useState("");
-  const [usuariosTab,    setUsuariosTab]    = useState("usuarios"); // "usuarios"|"historial"
 
   const isAdmin    = currentUser?.role==="admin";
   const isReadonly = currentUser?.role==="readonly";
@@ -529,25 +522,12 @@ export default function App() {
     setTimeout(() => setToast(null), 2200);
   }
 
-  function logActivity(action, detail) {
-    const entry = {
-      id: "l_"+Date.now()+"_"+Math.random().toString(36).slice(2,6),
-      user: currentUser?.name || "Sistema",
-      userId: currentUser?.id || "",
-      action,
-      detail,
-      ts: new Date().toISOString(),
-    };
-    setActivityLog(p => [entry, ...(p||[])].slice(0, 500)); // keep last 500
-  }
-
   // ── Load from storage ──
   useEffect(()=>{
     async function load(){
-      const [bk,cl,us,log] = await Promise.all([dbGet("bookings"),dbGet("clients"),dbGet("users"),dbGet("activityLog")]);
+      const [bk,cl,us] = await Promise.all([dbGet("bookings"),dbGet("clients"),dbGet("users")]);
       if(bk) setBookings(bk);
       if(cl) setClients(cl);
-      if(log) setActivityLog(log);
       let resolvedUsers=DEFAULT_USERS;
       if(us && Array.isArray(us) && us.length > 0) {
         const extras = us.filter(u => !DEFAULT_USERS.find(d => d.id === u.id));
@@ -565,10 +545,9 @@ export default function App() {
   },[]);
 
   // ── Persist ──
-  useEffect(()=>{ if(loaded) dbSet("bookings",bookings);         },[bookings,loaded]);
-  useEffect(()=>{ if(loaded) dbSet("clients",clients);           },[clients,loaded]);
-  useEffect(()=>{ if(loaded) dbSet("users",users);               },[users,loaded]);
-  useEffect(()=>{ if(loaded) dbSet("activityLog",activityLog);   },[activityLog,loaded]);
+  useEffect(()=>{ if(loaded) dbSet("bookings",bookings); },[bookings,loaded]);
+  useEffect(()=>{ if(loaded) dbSet("clients",clients);   },[clients,loaded]);
+  useEffect(()=>{ if(loaded) dbSet("users",users);       },[users,loaded]);
 
   const weekDates = getWeekDates(currentDate);
   const expanded  = useMemo(()=>expandAll(bookings),[bookings]);
@@ -647,9 +626,6 @@ export default function App() {
       setBookings(p=>[...p,entry]);
     }
     setModal(false);
-    const spLabel=SPACES[entry.space]?.label||entry.space;
-    const who=entry.isBloqueo?`Bloqueo: ${entry.bloqueoMotivo||"sin motivo"}`:entry.sinCargo?`Sin cargo: ${entry.sinCargoMotivo||""}`:entry.clientName||"?";
-    logActivity(editing?"Reserva editada":"Reserva creada", `${who} · ${spLabel} · ${entry.date} ${entry.startHour}:00–${entry.endHour}:00`);
     showToast(editing ? '✓ Reserva actualizada' : '✓ Reserva creada');
   }
   function del(id){
@@ -666,7 +642,6 @@ export default function App() {
         setBookings(p=>p.filter(b=>b.id!==id));
         setModal(false);
         setConfirmModal(null);
-        logActivity("Reserva eliminada", label);
         showToast('Reserva eliminada','error');
       },
     });
@@ -696,7 +671,7 @@ export default function App() {
     if(!userForm.name||!userForm.username||!userForm.password) return;
     if(editingUser) setUsers(p=>p.map(u=>u.id===editingUser.id?{...u,...userForm}:u));
     else setUsers(p=>[...p,{id:"u_"+Date.now(),...userForm}]);
-    setEditingUser(null); setUserForm({name:"",username:"",password:"",role:"vendedor",email:""});
+    setEditingUser(null); setUserForm({name:"",username:"",password:"",role:"vendedor"});
   }
   function delUser(id){
     if(id===currentUser?.id){alert("No podés eliminar tu propio usuario.");return;}
@@ -748,13 +723,7 @@ export default function App() {
   const conflict = form.date ? hasConflict(expanded,form.date,form.startHour,form.endHour,form.space,editing?.id) : false;
 
   if(!loaded) return <div style={{minHeight:"100vh",background:"#2b2b2b",display:"flex",alignItems:"center",justifyContent:"center",color:"#7c7876",fontSize:14}}>Cargando…</div>;
-  if(!currentUser) return <LoginScreen users={users} onLogin={u=>{
-    localStorage.setItem("damfield_session",JSON.stringify({id:u.id}));
-    setCurrentUser(u);
-    // Log login — use functional update so we don't depend on currentUser
-    const entry={id:"l_"+Date.now(),user:u.name,userId:u.id,action:"Login",detail:`Ingresó al sistema`,ts:new Date().toISOString()};
-    setActivityLog(p=>[entry,...(p||[])].slice(0,500));
-  }}/>;
+  if(!currentUser) return <LoginScreen users={users} onLogin={u=>{localStorage.setItem("damfield_session",JSON.stringify({id:u.id}));setCurrentUser(u);}}/>;
 
   // ─── MAIN RENDER ────────────────────────────────────────────────────────────
   return (
@@ -792,19 +761,14 @@ export default function App() {
           ))}
         </div>
 
-        {/* User badge + perfil + logout */}
+        {/* User badge + logout */}
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <button onClick={()=>{setProfileForm({email:currentUser.email||"",currentPwd:"",newPwd:"",confirmPwd:""});setProfileError("");setProfileSuccess("");setShowProfilePwd({cur:false,nw:false,cf:false});setProfileModal(true);}} style={{display:"flex",alignItems:"center",gap:7,background:"#333333",border:"1px solid #454545",borderRadius:8,padding:"5px 10px",cursor:"pointer"}}>
-            <div style={{width:24,height:24,borderRadius:"50%",background:"linear-gradient(135deg,#d0b08a,#BA9F82)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#2b2b2b",flexShrink:0}}>
-              {currentUser.name.charAt(0).toUpperCase()}
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:12,fontWeight:700}}>{currentUser.name}</div>
+            <div style={{fontSize:9,color:currentUser.role==="admin"?"#f59e0b":currentUser.role==="vendedor"?"#BA9F82":"#7c7876",textTransform:"uppercase",letterSpacing:0.8}}>
+              {currentUser.role==="admin"?"Admin":currentUser.role==="vendedor"?"Vendedor":"Solo lectura"}
             </div>
-            <div style={{textAlign:"left"}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#E2E0E1"}}>{currentUser.name}</div>
-              <div style={{fontSize:8,color:currentUser.role==="admin"?"#f59e0b":currentUser.role==="vendedor"?"#BA9F82":"#7c7876",textTransform:"uppercase",letterSpacing:0.8}}>
-                {currentUser.role==="admin"?"Admin":currentUser.role==="vendedor"?"Vendedor":"Solo lectura"}
-              </div>
-            </div>
-          </button>
+          </div>
           <button onClick={()=>{localStorage.removeItem("damfield_session");setCurrentUser(null);}} style={{background:"#333333",border:"1px solid #454545",color:"#7c7876",borderRadius:8,padding:"5px 10px",cursor:"pointer",fontSize:11}}>Salir</button>
         </div>
 
@@ -989,7 +953,7 @@ export default function App() {
                     </div>
                   );
                 })}
-                {/* Hour rows — render EVERY cell (no null returns, no spanning) */}
+                {/* Hour rows */}
                 {dayHours.map((hour,hi)=>{
                   const isExtra=!DEFAULT_HOURS.includes(hour);
                   return(
@@ -998,12 +962,14 @@ export default function App() {
                       <div style={{background:"#2b2b2b",borderRight:"1px solid #454545",borderBottom:hi<N-1?"1px solid #2f2f2f":"none",display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>
                         <span style={{fontSize:10,fontWeight:700,color:isExtra?"#f59e0b":"#a7a3a0"}}>{pad(hour)}</span>
                       </div>
-                      {/* Cells per space — always rendered */}
-                      {allCols.map(({sid},ci)=>{
+                      {/* Cells per space */}
+                      {allCols.map(({sid,group},ci)=>{
                         const bk=dayBookings.find(b=>b.space===sid&&b.startHour<=hour&&b.endHour>hour);
                         const isBlocked=bk?.isBloqueo;
                         const isStart=bk&&bk.startHour===hour;
-                        const isCont=bk&&!isStart;
+                        const span=bk?bk.endHour-bk.startHour:1;
+                        // Only render cell if it's the start hour of the booking (others are spanned)
+                        if(bk&&!isStart) return null;
                         const sp=SPACES[sid];
                         return(
                           <div
@@ -1013,30 +979,33 @@ export default function App() {
                               else if(canEdit){setForm({...EMPTY_FORM,space:sid,date:dk,startHour:hour,endHour:hour+1});setSelected(null);setModalTab("reserva");}
                             }}
                             style={{
-                              borderBottom:hi<N-1?"1px solid #2a2a2a":"none",
+                              gridRow:`span ${bk?span:1}`,
+                              borderBottom:hi<N-1&&!bk?"1px solid #2a2a2a":"none",
                               borderRight:ci<allCols.length-1?"1px solid #2a2a2a":"none",
-                              background:bk?(isBlocked?"#3a2a2a":`${sp.color}18`):"transparent",
+                              background:bk?(isBlocked?"#3a2a2a":`${sp.color}22`):"transparent",
                               cursor:bk||canEdit?"pointer":"default",
+                              padding:bk?"3px 4px":"0",
                               overflow:"hidden",
                               position:"relative",
+                              transition:"background 0.1s",
                             }}
                             onMouseEnter={e=>{if(!bk&&canEdit)e.currentTarget.style.background="#BA9F8215";}}
                             onMouseLeave={e=>{if(!bk)e.currentTarget.style.background="transparent";}}
                           >
-                            {/* Left accent bar for entire booking duration */}
-                            {bk&&<div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:isBlocked?"#c96b5f":sp.color}}/>}
-                            {/* Content only on start row */}
-                            {isStart&&(
-                              <div style={{paddingLeft:6,paddingRight:2,height:"100%",display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden"}}>
-                                {isBlocked?(
-                                  <span style={{fontSize:9,fontWeight:700,color:"#c96b5f",lineHeight:1.2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🚫 {bk.bloqueoMotivo||"Bloqueado"}</span>
-                                ):(
-                                  <>
-                                    <span style={{fontSize:9,fontWeight:700,color:"#E2E0E1",lineHeight:1.2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{bk.clientName||"—"}</span>
-                                    <span style={{fontSize:8,color:"#7c7876",lineHeight:1.1}}>{pad(bk.startHour)}–{pad(bk.endHour)}</span>
-                                  </>
-                                )}
-                              </div>
+                            {bk&&(
+                              <>
+                                <div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:isBlocked?"#c96b5f":sp.color,borderRadius:"2px 0 0 2px"}}/>
+                                <div style={{paddingLeft:6,height:"100%",display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden"}}>
+                                  {isBlocked?(
+                                    <span style={{fontSize:9,fontWeight:700,color:"#c96b5f",lineHeight:1.2}}>🚫 {bk.bloqueoMotivo||"Bloqueado"}</span>
+                                  ):(
+                                    <>
+                                      <span style={{fontSize:9,fontWeight:700,color:"#E2E0E1",lineHeight:1.2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{bk.clientName||"—"}</span>
+                                      {span>1&&<span style={{fontSize:8,color:"#7c7876",lineHeight:1.1}}>{pad(bk.startHour)}–{pad(bk.endHour)}</span>}
+                                    </>
+                                  )}
+                                </div>
+                              </>
                             )}
                           </div>
                         );
@@ -1443,15 +1412,9 @@ export default function App() {
 
       {/* ── USUARIOS (solo admin) ── */}
       {view==="usuarios"&&isAdmin&&(
-        <div style={{padding:16,maxWidth:760,margin:"0 auto"}}>
-          {/* Sub-tabs */}
-          <div style={{display:"flex",background:"#333333",borderRadius:8,padding:3,border:"1px solid #454545",gap:2,marginBottom:18,width:"fit-content"}}>
-            {[["usuarios","⚙️ Usuarios"],["historial","📋 Historial"]].map(([v,l])=>(
-              <button key={v} onClick={()=>setUsuariosTab(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,background:usuariosTab===v?"linear-gradient(135deg,#d0b08a,#BA9F82)":"transparent",color:usuariosTab===v?"#2b2b2b":"#7c7876"}}>{l}</button>
-            ))}
-          </div>
+        <div style={{padding:16,maxWidth:700,margin:"0 auto"}}>
+          <div style={{fontSize:10,color:"#7c7876",textTransform:"uppercase",letterSpacing:1,marginBottom:16}}>Gestión de usuarios</div>
 
-          {usuariosTab==="usuarios"&&(<>
           {/* New/edit user form */}
           <div style={{background:"#2b2b2b",border:"1px solid #454545",borderRadius:12,padding:18,marginBottom:20}}>
             <div style={{fontSize:12,fontWeight:700,color:"#a7a3a0",marginBottom:12}}>{editingUser?"Editar usuario":"Nuevo usuario"}</div>
@@ -1473,12 +1436,9 @@ export default function App() {
                   <option value="readonly">Solo lectura</option>
                 </select>
               </FG>
-              <FG label="Correo electrónico (recuperación)">
-                <input value={userForm.email||""} onChange={e=>setUserForm(f=>({...f,email:e.target.value}))} placeholder="correo@ejemplo.com" style={inpSt}/>
-              </FG>
             </div>
             <div style={{display:"flex",gap:8,marginTop:12}}>
-              {editingUser&&<button onClick={()=>{setEditingUser(null);setUserForm({name:"",username:"",password:"",role:"vendedor",email:""});}} style={{padding:"7px 14px",borderRadius:8,border:"1px solid #454545",background:"transparent",color:"#a7a3a0",cursor:"pointer",fontSize:12}}>Cancelar</button>}
+              {editingUser&&<button onClick={()=>{setEditingUser(null);setUserForm({name:"",username:"",password:"",role:"vendedor"});}} style={{padding:"7px 14px",borderRadius:8,border:"1px solid #454545",background:"transparent",color:"#a7a3a0",cursor:"pointer",fontSize:12}}>Cancelar</button>}
               <button onClick={saveUser} disabled={!userForm.name||!userForm.username||!userForm.password} style={{padding:"7px 16px",borderRadius:8,border:"none",fontSize:12,fontWeight:700,cursor:"pointer",background:(!userForm.name||!userForm.username||!userForm.password)?"#454545":"#BA9F82",color:(!userForm.name||!userForm.username||!userForm.password)?"#7c7876":"#2b2b2b"}}>
                 {editingUser?"Guardar cambios":"Agregar usuario"}
               </button>
@@ -1488,12 +1448,9 @@ export default function App() {
           {/* User list */}
           {users.map(u=>(
             <div key={u.id} style={{background:"#2b2b2b",border:"1px solid #454545",borderRadius:10,padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
-              <div style={{width:36,height:36,borderRadius:"50%",background:"linear-gradient(135deg,#d0b08a,#BA9F82)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:"#2b2b2b",flexShrink:0}}>
-                {u.name.charAt(0).toUpperCase()}
-              </div>
-              <div style={{flex:1,minWidth:0}}>
+              <div style={{flex:1}}>
                 <div style={{fontSize:13,fontWeight:700}}>{u.name}</div>
-                <div style={{fontSize:11,color:"#7c7876"}}>@{u.username}{u.email&&<span style={{marginLeft:8,color:"#454545"}}>· {u.email}</span>}</div>
+                <div style={{fontSize:11,color:"#7c7876"}}>@{u.username}</div>
               </div>
               <div style={{fontSize:10,padding:"3px 10px",borderRadius:20,fontWeight:700,
                 background:u.role==="admin"?"#f59e0b22":u.role==="vendedor"?"#BA9F8222":"#3b82f622",
@@ -1501,48 +1458,11 @@ export default function App() {
                 {u.role==="admin"?"Admin":u.role==="vendedor"?"Vendedor":"Solo lectura"}
               </div>
               <div style={{display:"flex",gap:6}}>
-                <button onClick={()=>{setEditingUser(u);setUserForm({name:u.name,username:u.username,password:u.password,role:u.role,email:u.email||""});}} style={{padding:"5px 10px",borderRadius:7,border:"1px solid #454545",background:"transparent",color:"#a7a3a0",cursor:"pointer",fontSize:11}}>Editar</button>
+                <button onClick={()=>{setEditingUser(u);setUserForm({name:u.name,username:u.username,password:u.password,role:u.role});}} style={{padding:"5px 10px",borderRadius:7,border:"1px solid #454545",background:"transparent",color:"#a7a3a0",cursor:"pointer",fontSize:11}}>Editar</button>
                 {u.id!==currentUser.id&&<button onClick={()=>delUser(u.id)} style={{padding:"5px 10px",borderRadius:7,border:"1px solid #c96b5f44",background:"#c96b5f10",color:"#c96b5f",cursor:"pointer",fontSize:11}}>Eliminar</button>}
               </div>
             </div>
           ))}
-          </>)}
-
-          {usuariosTab==="historial"&&(()=>{
-            const actionColors={
-              "Login":"#60a5fa","Reserva creada":"#22c55e","Reserva editada":"#f59e0b",
-              "Reserva eliminada":"#c96b5f","Pago registrado":"#BA9F82",
-              "Asistencia registrada":"#a78bfa","Perfil actualizado":"#7c7876",
-            };
-            const logFiltered = activityLog||[];
-            return(
-              <div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-                  <div style={{fontSize:11,color:"#7c7876"}}>{logFiltered.length} registros</div>
-                  {logFiltered.length>0&&<button onClick={()=>setConfirmModal({title:"¿Limpiar historial?",body:"Se borrarán todos los registros de actividad.",danger:true,onConfirm:()=>{setActivityLog([]);setConfirmModal(null);}})} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #c96b5f44",background:"#c96b5f10",color:"#c96b5f",cursor:"pointer",fontSize:10}}>Limpiar historial</button>}
-                </div>
-                {logFiltered.length===0&&<div style={{textAlign:"center",padding:60,color:"#7c7876"}}>No hay actividad registrada todavía.</div>}
-                {logFiltered.map(entry=>{
-                  const col=actionColors[entry.action]||"#7c7876";
-                  const dt=new Date(entry.ts);
-                  const dtStr=dt.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"})+" "+dt.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
-                  return(
-                    <div key={entry.id} style={{background:"#2b2b2b",border:"1px solid #454545",borderRadius:8,padding:"10px 14px",marginBottom:6,display:"flex",alignItems:"flex-start",gap:12}}>
-                      <div style={{width:8,height:8,borderRadius:"50%",background:col,flexShrink:0,marginTop:4}}/>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                          <span style={{fontSize:11,fontWeight:700,color:col}}>{entry.action}</span>
-                          <span style={{fontSize:10,color:"#a7a3a0",fontWeight:600}}>{entry.user}</span>
-                        </div>
-                        {entry.detail&&<div style={{fontSize:10,color:"#7c7876",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{entry.detail}</div>}
-                      </div>
-                      <div style={{fontSize:9,color:"#454545",flexShrink:0,textAlign:"right",lineHeight:1.4}}>{dtStr}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
         </div>
       )}
 
@@ -1871,7 +1791,6 @@ export default function App() {
                               const existing=bookings.find(b=>b.id===editing.id);
                               const entry={...updatedForm,id:editing.id,...audit(existing)};
                               setBookings(prev=>prev.map(b=>b.id===editing.id?entry:b));
-                              logActivity("Pago registrado",`${form.clientName||"?"} · ${fmtMoney(p.monto)} · ${p.forma}`);
                             }
                           }} style={{width:"100%",padding:"8px",borderRadius:8,border:"none",background:form.newPagoMonto?"#BA9F82":"#454545",color:form.newPagoMonto?"#2b2b2b":"#7c7876",fontWeight:700,fontSize:12,cursor:"pointer"}}>
                             Registrar pago
@@ -1901,7 +1820,6 @@ export default function App() {
                         const existing=bookings.find(b=>b.id===editing.id);
                         const entry={...updatedForm,id:editing.id,...audit(existing)};
                         setBookings(prev=>prev.map(b=>b.id===editing.id?entry:b));
-                        if(newVal!==null) logActivity("Asistencia registrada",`${form.clientName||"?"} · ${newVal?"Asistió":"No asistió"} · ${form.date}`);
                       }
                     }} style={{flex:1,padding:"10px",borderRadius:8,border:`2px solid ${form.asistio===val?activeColor:"#454545"}`,background:form.asistio===val?`${activeColor}22`:"transparent",color:form.asistio===val?activeColor:"#7c7876",cursor:"pointer",fontWeight:700,fontSize:13,transition:"all 0.15s"}}>
                       {label}
@@ -2038,83 +1956,6 @@ export default function App() {
               <button onClick={confirmModal.onConfirm}
                 style={{padding:'8px 18px',borderRadius:8,border:'none',background:confirmModal.danger?'#c96b5f':'#BA9F82',color:confirmModal.danger?'#fff':'#2b2b2b',cursor:'pointer',fontSize:13,fontWeight:700}}>
                 Confirmar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── PERFIL MODAL ── */}
-      {profileModal&&(
-        <div style={{position:'fixed',inset:0,background:'rgba(24,22,21,0.72)',backdropFilter:'blur(3px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:600,padding:16}}
-          onClick={e=>e.target===e.currentTarget&&setProfileModal(false)}>
-          <div style={{background:'linear-gradient(160deg,#333333 0%,#2b2b2b 100%)',border:'1px solid #454545',borderRadius:14,width:'100%',maxWidth:420,padding:24,boxShadow:'0 20px 50px rgba(0,0,0,0.7)'}}>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
-              <div>
-                <div style={{fontSize:15,fontWeight:800,color:'#E2E0E1'}}>Mi perfil</div>
-                <div style={{fontSize:11,color:'#7c7876'}}>@{currentUser.username}</div>
-              </div>
-              <button onClick={()=>setProfileModal(false)} style={{background:'none',border:'none',color:'#7c7876',fontSize:22,cursor:'pointer',lineHeight:1}}>×</button>
-            </div>
-            {/* Email */}
-            <FG label="Correo electrónico">
-              <input value={profileForm.email} onChange={e=>setProfileForm(f=>({...f,email:e.target.value}))}
-                placeholder="tu@correo.com" style={inpSt}/>
-            </FG>
-            <div style={{borderTop:'1px solid #454545',margin:'14px 0'}}/>
-            <div style={{fontSize:10,color:'#7c7876',textTransform:'uppercase',letterSpacing:1,marginBottom:10}}>Cambiar contraseña</div>
-            <FG label="Contraseña actual">
-              <div style={{position:'relative'}}>
-                <input type={showProfilePwd.cur?"text":"password"} value={profileForm.currentPwd} onChange={e=>setProfileForm(f=>({...f,currentPwd:e.target.value}))}
-                  placeholder="••••••••" style={{...inpSt,paddingRight:40}}/>
-                <button type="button" onClick={()=>setShowProfilePwd(p=>({...p,cur:!p.cur}))} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'#7c7876',fontSize:16,padding:2}}>
-                  {showProfilePwd.cur?"🙈":"👁"}
-                </button>
-              </div>
-            </FG>
-            <FG label="Nueva contraseña">
-              <div style={{position:'relative'}}>
-                <input type={showProfilePwd.nw?"text":"password"} value={profileForm.newPwd} onChange={e=>setProfileForm(f=>({...f,newPwd:e.target.value}))}
-                  placeholder="••••••••" style={{...inpSt,paddingRight:40}}/>
-                <button type="button" onClick={()=>setShowProfilePwd(p=>({...p,nw:!p.nw}))} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'#7c7876',fontSize:16,padding:2}}>
-                  {showProfilePwd.nw?"🙈":"👁"}
-                </button>
-              </div>
-            </FG>
-            <FG label="Confirmar nueva contraseña">
-              <div style={{position:'relative'}}>
-                <input type={showProfilePwd.cf?"text":"password"} value={profileForm.confirmPwd} onChange={e=>setProfileForm(f=>({...f,confirmPwd:e.target.value}))}
-                  placeholder="••••••••" style={{...inpSt,paddingRight:40}}/>
-                <button type="button" onClick={()=>setShowProfilePwd(p=>({...p,cf:!p.cf}))} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'#7c7876',fontSize:16,padding:2}}>
-                  {showProfilePwd.cf?"🙈":"👁"}
-                </button>
-              </div>
-            </FG>
-            {profileError&&<div style={{background:'#c96b5f15',border:'1px solid #c96b5f44',borderRadius:8,padding:'8px 12px',fontSize:12,color:'#c96b5f',marginBottom:10}}>{profileError}</div>}
-            {profileSuccess&&<div style={{background:'#22c55e15',border:'1px solid #22c55e44',borderRadius:8,padding:'8px 12px',fontSize:12,color:'#22c55e',marginBottom:10}}>{profileSuccess}</div>}
-            <div style={{display:'flex',gap:8,marginTop:4}}>
-              <button onClick={()=>setProfileModal(false)} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #454545',background:'transparent',color:'#a7a3a0',cursor:'pointer',fontSize:12}}>Cancelar</button>
-              <button onClick={()=>{
-                setProfileError(''); setProfileSuccess('');
-                const u=users.find(x=>x.id===currentUser.id);
-                // Validate password change if any pwd field filled
-                const pwdChange=profileForm.currentPwd||profileForm.newPwd||profileForm.confirmPwd;
-                if(pwdChange){
-                  if(!profileForm.currentPwd){setProfileError('Ingresá tu contraseña actual.');return;}
-                  if(u?.password!==profileForm.currentPwd){setProfileError('La contraseña actual no es correcta.');return;}
-                  if(!profileForm.newPwd){setProfileError('Ingresá la nueva contraseña.');return;}
-                  if(profileForm.newPwd.length<4){setProfileError('La nueva contraseña debe tener al menos 4 caracteres.');return;}
-                  if(profileForm.newPwd!==profileForm.confirmPwd){setProfileError('Las contraseñas nuevas no coinciden.');return;}
-                }
-                // Save
-                const updated={...u, email:profileForm.email, ...(pwdChange?{password:profileForm.newPwd}:{})};
-                setUsers(p=>p.map(x=>x.id===currentUser.id?updated:x));
-                setCurrentUser(updated);
-                logActivity('Perfil actualizado', pwdChange?'Cambió contraseña y/o email':'Actualizó email');
-                setProfileSuccess('¡Cambios guardados!');
-                setProfileForm(f=>({...f,currentPwd:'',newPwd:'',confirmPwd:''}));
-              }} style={{flex:1,padding:'8px 16px',borderRadius:8,border:'none',background:'#BA9F82',color:'#2b2b2b',cursor:'pointer',fontSize:12,fontWeight:700}}>
-                Guardar cambios
               </button>
             </div>
           </div>
