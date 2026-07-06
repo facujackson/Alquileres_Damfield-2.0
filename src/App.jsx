@@ -487,6 +487,9 @@ export default function App() {
   const [finDate,        setFinDate]        = useState(new Date());
   const [listFilter,     setListFilter]     = useState("all");
   const [clientModal,    setClientModal]    = useState(false);
+  const [dupModal,       setDupModal]       = useState(false);
+  const [dupGroups,      setDupGroups]      = useState([]);   // [{clients:[...], keepId}]
+  const [dupKeep,        setDupKeep]        = useState({});   // {groupIdx: clientId}
   const [clientPicker,   setClientPicker]   = useState(false);
   const [editingClient,  setEditingClient]  = useState(null);
   const [clientForm,     setClientForm]     = useState({name:"",phone:"",email:"",org:""});
@@ -690,6 +693,47 @@ export default function App() {
     setClientPicker(false);
   }
   function clientHistory(cid){ return expanded.filter(b=>b.clientId===cid).sort((a,b)=>a.date.localeCompare(b.date)); }
+
+  function normName(s){ return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]/g,"").trim().split(/\s+/).sort().join(" "); }
+  function nameSimilar(a,b){ const na=normName(a),nb=normName(b); if(!na||!nb) return false; if(na===nb) return true; const wa=new Set(na.split(" ")),wb=new Set(nb.split(" ")); const inter=[...wa].filter(x=>wb.has(x)&&x.length>2); return inter.length>=2||(inter.length>=1&&(wa.size===1||wb.size===1)); }
+  function findDuplicates(){
+    const groups=[];
+    const used=new Set();
+    // Phone duplicates (exact, non-empty)
+    const byPhone={};
+    clients.forEach(c=>{ const p=(c.phone||"").replace(/\s/g,""); if(p){ if(!byPhone[p]) byPhone[p]=[]; byPhone[p].push(c); }});
+    Object.values(byPhone).forEach(grp=>{ if(grp.length>1){ grp.forEach(c=>used.add(c.id)); groups.push({reason:"phone",clients:grp}); }});
+    // Name duplicates
+    const remaining=clients.filter(c=>!used.has(c.id));
+    for(let i=0;i<remaining.length;i++){
+      if(used.has(remaining[i].id)) continue;
+      const grp=[remaining[i]];
+      for(let j=i+1;j<remaining.length;j++){
+        if(used.has(remaining[j].id)) continue;
+        if(nameSimilar(remaining[i].name,remaining[j].name)){ grp.push(remaining[j]); used.add(remaining[j].id); }
+      }
+      if(grp.length>1){ used.add(remaining[i].id); groups.push({reason:"name",clients:grp}); }
+    }
+    return groups;
+  }
+  function mergeClients(keepId, removeIds){
+    const keep=clients.find(c=>c.id===keepId);
+    if(!keep) return;
+    // Merge phone/email/empresa from removed into keep if keep is missing them
+    let merged={...keep};
+    removeIds.forEach(rid=>{
+      const rem=clients.find(c=>c.id===rid);
+      if(!rem) return;
+      if(!merged.phone&&rem.phone) merged.phone=rem.phone;
+      if(!merged.email&&rem.email) merged.email=rem.email;
+      if(!merged.empresa&&rem.empresa) merged.empresa=rem.empresa;
+    });
+    setClients(p=>p.filter(c=>c.id===keepId?false:!removeIds.includes(c.id)?true:false).map(c=>c.id===keepId?merged:c));
+    // Reassign bookings
+    setBookings(p=>p.map(b=>removeIds.includes(b.clientId)?{...b,clientId:keepId,clientName:merged.name}:b));
+    logActivity("Clientes fusionados",`Conservado: ${merged.name} · Eliminados: ${removeIds.length}`);
+    showToast(`✓ ${removeIds.length} duplicado${removeIds.length>1?"s":""} fusionado${removeIds.length>1?"s":""}`);
+  }
 
   // ── User ops ──
   function saveUser(){
@@ -1279,7 +1323,10 @@ export default function App() {
           {/* Header */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
             <span style={{fontSize:13,fontWeight:700,color:"#a7a3a0"}}>{shown.length} / {clients.length} clientes{incompleteCount>0&&<span style={{marginLeft:8,fontSize:11,color:"#f59e0b",fontWeight:700}}>⚠ {incompleteCount} incompletos</span>}</span>
-            {canEdit&&<button onClick={()=>openClientModal()} style={{background:"linear-gradient(135deg,#d0b08a 0%,#BA9F82 60%,#9e8464 100%)",color:"#2b2b2b",border:"none",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontWeight:700,fontSize:12}}>+ Nuevo cliente</button>}
+            <div style={{display:"flex",gap:8}}>
+              {isAdmin&&<button onClick={()=>{const g=findDuplicates();setDupGroups(g);const init={};g.forEach((gr,i)=>{const best=gr.clients.reduce((a,b)=>clientHistory(b.id).length>clientHistory(a.id).length?b:a);init[i]=best.id;});setDupKeep(init);setDupModal(true);}} style={{background:"#333333",color:"#f59e0b",border:"1px solid #f59e0b44",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontWeight:700,fontSize:12}}>🔍 Duplicados</button>}
+              {canEdit&&<button onClick={()=>openClientModal()} style={{background:"linear-gradient(135deg,#d0b08a 0%,#BA9F82 60%,#9e8464 100%)",color:"#2b2b2b",border:"none",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontWeight:700,fontSize:12}}>+ Nuevo cliente</button>}
+            </div>
           </div>
           {/* Filtros */}
           <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
@@ -2023,6 +2070,109 @@ export default function App() {
               <button onClick={()=>setClientModal(false)} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #454545",background:"transparent",color:"#a7a3a0",cursor:"pointer",fontSize:12}}>Cancelar</button>
               <button onClick={saveClient} disabled={!clientForm.name} style={{padding:"8px 18px",borderRadius:8,border:"none",fontSize:12,fontWeight:700,cursor:"pointer",background:!clientForm.name?"#454545":"#BA9F82",color:!clientForm.name?"#7c7876":"#2b2b2b"}}>{editingClient?"Guardar":"Agregar"}</button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* ── DUPLICATES MODAL ── */}
+      {dupModal&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(24,22,21,0.82)',backdropFilter:'blur(3px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:600,padding:16}}
+          onClick={e=>e.target===e.currentTarget&&setDupModal(false)}>
+          <div style={{background:'linear-gradient(160deg,#333333,#2b2b2b)',border:'1px solid #454545',borderRadius:14,width:'100%',maxWidth:560,maxHeight:'85vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 50px rgba(0,0,0,0.7)'}}>
+            {/* Header */}
+            <div style={{padding:'18px 20px 14px',borderBottom:'1px solid #454545',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+              <div>
+                <div style={{fontSize:15,fontWeight:800,color:'#E2E0E1'}}>🔍 Duplicados detectados</div>
+                <div style={{fontSize:11,color:'#7c7876',marginTop:2}}>{dupGroups.length===0?'No se encontraron duplicados':`${dupGroups.length} grupo${dupGroups.length>1?"s":""} · Elegí cuál conservar en cada uno`}</div>
+              </div>
+              <button onClick={()=>setDupModal(false)} style={{background:'none',border:'none',color:'#7c7876',fontSize:22,cursor:'pointer'}}>×</button>
+            </div>
+            {/* Body */}
+            <div style={{overflowY:'auto',padding:'14px 20px',flex:1}}>
+              {dupGroups.length===0&&(
+                <div style={{textAlign:'center',padding:'40px 0',color:'#7c7876'}}>
+                  <div style={{fontSize:32,marginBottom:8}}>✅</div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#E2E0E1'}}>¡Base de datos limpia!</div>
+                  <div style={{fontSize:11,marginTop:4}}>No se encontraron clientes duplicados.</div>
+                </div>
+              )}
+              {dupGroups.map((grp,gi)=>{
+                const keepId=dupKeep[gi]||grp.clients[0].id;
+                const removeIds=grp.clients.filter(c=>c.id!==keepId).map(c=>c.id);
+                return(
+                  <div key={gi} style={{background:'#2b2b2b',border:'1px solid #454545',borderRadius:10,padding:14,marginBottom:12}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+                      <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:10,background:grp.reason==='phone'?'#60a5fa22':'#f59e0b22',color:grp.reason==='phone'?'#60a5fa':'#f59e0b'}}>
+                        {grp.reason==='phone'?'📞 Mismo teléfono':'🔤 Nombre similar'}
+                      </span>
+                      <span style={{fontSize:10,color:'#7c7876'}}>{grp.clients.length} clientes</span>
+                    </div>
+                    {grp.clients.map(c=>{
+                      const hist=clientHistory(c.id);
+                      const total=hist.filter(b=>!b.sinCargo&&!b.isBloqueo).reduce((s,b)=>s+getNetAmount(b),0);
+                      const isKeep=c.id===keepId;
+                      return(
+                        <div key={c.id} onClick={()=>setDupKeep(p=>({...p,[gi]:c.id}))}
+                          style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:8,marginBottom:6,cursor:'pointer',border:`1px solid ${isKeep?'#BA9F82':'#454545'}`,background:isKeep?'#BA9F8211':'#333333',transition:'all 0.15s'}}>
+                          <div style={{width:18,height:18,borderRadius:'50%',border:`2px solid ${isKeep?'#BA9F82':'#454545'}`,background:isKeep?'#BA9F82':'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                            {isKeep&&<div style={{width:8,height:8,borderRadius:'50%',background:'#2b2b2b'}}/>}
+                          </div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:12,fontWeight:700,color:isKeep?'#E2E0E1':'#a7a3a0'}}>{c.name||'Sin nombre'}</div>
+                            <div style={{fontSize:10,color:'#7c7876',marginTop:1}}>
+                              {c.phone&&<span>{c.phone}</span>}
+                              {c.email&&<span style={{marginLeft:6}}>{c.email}</span>}
+                            </div>
+                          </div>
+                          <div style={{textAlign:'right',flexShrink:0}}>
+                            <div style={{fontSize:11,fontWeight:700,color:'#22c55e'}}>{hist.length} reservas</div>
+                            {total>0&&<div style={{fontSize:10,color:'#7c7876'}}>{fmtMoney(total)}</div>}
+                          </div>
+                          {isKeep&&<span style={{fontSize:9,fontWeight:700,color:'#BA9F82',background:'#BA9F8222',padding:'2px 6px',borderRadius:6,flexShrink:0}}>CONSERVAR</span>}
+                        </div>
+                      );
+                    })}
+                    <button onClick={()=>{
+                      setConfirmModal({
+                        title:'¿Fusionar estos clientes?',
+                        body:`Se conserva "${grp.clients.find(c=>c.id===keepId)?.name}" y se eliminan ${removeIds.length} duplicado${removeIds.length>1?"s":""}.`,
+                        danger:false,
+                        onConfirm:()=>{
+                          mergeClients(keepId,removeIds);
+                          setDupGroups(p=>p.filter((_,i)=>i!==gi));
+                          setDupKeep(p=>{ const n={...p}; delete n[gi]; return n; });
+                          setConfirmModal(null);
+                        }
+                      });
+                    }} style={{width:'100%',marginTop:4,padding:'7px',borderRadius:8,border:'1px solid #BA9F8244',background:'#BA9F8211',color:'#BA9F82',cursor:'pointer',fontSize:12,fontWeight:700}}>
+                      Fusionar → conservar "{grp.clients.find(c=>c.id===keepId)?.name}"
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            {dupGroups.length>0&&(
+              <div style={{padding:'12px 20px',borderTop:'1px solid #454545',flexShrink:0,display:'flex',gap:8,justifyContent:'flex-end'}}>
+                <button onClick={()=>setDupModal(false)} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #454545',background:'transparent',color:'#a7a3a0',cursor:'pointer',fontSize:12}}>Cerrar</button>
+                <button onClick={()=>{
+                  setConfirmModal({
+                    title:`¿Fusionar todos los grupos?`,
+                    body:`Se van a procesar ${dupGroups.length} grupos de duplicados de una vez.`,
+                    danger:false,
+                    onConfirm:()=>{
+                      dupGroups.forEach((grp,gi)=>{
+                        const keepId=dupKeep[gi]||grp.clients[0].id;
+                        const removeIds=grp.clients.filter(c=>c.id!==keepId).map(c=>c.id);
+                        mergeClients(keepId,removeIds);
+                      });
+                      setDupGroups([]);
+                      setDupKeep({});
+                      setConfirmModal(null);
+                      setDupModal(false);
+                    }
+                  });
+                }} style={{padding:'8px 16px',borderRadius:8,border:'none',background:'#BA9F82',color:'#2b2b2b',cursor:'pointer',fontSize:12,fontWeight:700}}>Fusionar todos ({dupGroups.length})</button>
+              </div>
+            )}
           </div>
         </div>
       )}
