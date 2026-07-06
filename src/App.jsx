@@ -2002,11 +2002,14 @@ export default function App() {
                   <div style={{fontSize:10,color:"#7c7876",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Historial ({hist.length})</div>
                   <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:140,overflowY:"auto"}}>
                     {hist.map(bk=>(
-                      <div key={bk.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:"#7c7876",background:"#333333",borderRadius:6,padding:"4px 8px"}}>
+                      <div key={bk.id} onClick={()=>{setClientModal(false);openEdit(bk);}} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:"#a7a3a0",background:"#333333",borderRadius:6,padding:"4px 8px",cursor:"pointer",transition:"background 0.12s"}}
+                        onMouseEnter={e=>e.currentTarget.style.background="#3e3b38"}
+                        onMouseLeave={e=>e.currentTarget.style.background="#333333"}>
                         <span>{new Date(bk.date+"T12:00").toLocaleDateString("es-AR",{weekday:"short",day:"2-digit",month:"2-digit"})} · {SPACES[bk.space]?.short} · {bk.startHour}:00–{bk.endHour}:00</span>
                         <div style={{display:"flex",alignItems:"center",gap:6}}>
                           {isPast(bk)&&bk.asistio!==null&&<span style={{fontSize:9,fontWeight:700,color:bk.asistio?"#22c55e":"#c96b5f"}}>{bk.asistio?"✓":"✗"}</span>}
                           <span style={{color:"#22c55e",fontWeight:700}}>{bk.sinCargo?"SC":fmtMoney(bk.totalAmount)}</span>
+                          <span style={{fontSize:9,color:"#454545"}}>›</span>
                         </div>
                       </div>
                     ))}
