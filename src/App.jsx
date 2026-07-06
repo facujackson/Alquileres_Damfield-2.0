@@ -553,8 +553,10 @@ export default function App() {
       if(log) setActivityLog(log);
       let resolvedUsers=DEFAULT_USERS;
       if(us && Array.isArray(us) && us.length > 0) {
+        // Usar versión de Firebase para usuarios existentes (preserva contraseñas y emails cambiados)
+        const base = DEFAULT_USERS.map(d => us.find(u => u.id === d.id) || d);
         const extras = us.filter(u => !DEFAULT_USERS.find(d => d.id === u.id));
-        resolvedUsers=[...DEFAULT_USERS, ...extras];
+        resolvedUsers = [...base, ...extras];
       }
       setUsers(resolvedUsers);
       // Auto-login desde sesión guardada
