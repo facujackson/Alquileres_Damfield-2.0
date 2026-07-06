@@ -455,7 +455,7 @@ function BookingBottomSheet({ form, setForm, editing, onSave, onClose, onDelete,
                 {editing?'✓ Guardar cambios':'✓ Confirmar reserva'}
               </button>
             </div>
-            {editing&&isAdmin&&(
+            {editing&&canEdit&&(
               <button onClick={onDelete} style={{width:'100%',marginTop:10,padding:'12px',borderRadius:12,border:'1px solid #c96b5f44',background:'#c96b5f10',color:'#c96b5f',cursor:'pointer',fontSize:13,fontWeight:700}}>Eliminar reserva</button>
             )}
           </div>
@@ -653,7 +653,7 @@ export default function App() {
     showToast(editing ? '✓ Reserva actualizada' : '✓ Reserva creada');
   }
   function del(id){
-    if(!isAdmin){ alert("Solo el administrador puede eliminar."); return; }
+    if(!canEdit){ alert("No tenés permiso para eliminar."); return; }
     const bk=bookings.find(b=>b.id===id);
     const label=bk?.isBloqueo
       ? `Bloqueo: ${bk.bloqueoMotivo||'sin motivo'}`
@@ -1920,7 +1920,7 @@ export default function App() {
               const isLast=form.isBloqueo||tabIdx===MODAL_TABS.length-1;
               return(
                 <div style={{display:"flex",gap:8,marginTop:16}}>
-                  {editing&&isAdmin&&<button onClick={()=>del(editing.id)} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #c96b5f44",background:"#c96b5f10",color:"#c96b5f",cursor:"pointer",fontSize:12}}>Eliminar</button>}
+                  {editing&&canEdit&&<button onClick={()=>del(editing.id)} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #c96b5f44",background:"#c96b5f10",color:"#c96b5f",cursor:"pointer",fontSize:12}}>Eliminar</button>}
                   <div style={{flex:1}}/>
                   <button onClick={()=>setModal(false)} style={{padding:"8px 16px",borderRadius:8,border:"1px solid #454545",background:"transparent",color:"#a7a3a0",cursor:"pointer",fontSize:12}}>Cancelar</button>
                   {!form.isBloqueo&&tabIdx>0&&(
@@ -2015,7 +2015,7 @@ export default function App() {
               ):null;
             })()}
             <div style={{display:"flex",gap:8,marginTop:16}}>
-              {editingClient&&isAdmin&&<button onClick={()=>{setConfirmModal({title:'¿Eliminar cliente?',body:editingClient.name,danger:true,onConfirm:()=>{setClients(p=>p.filter(c=>c.id!==editingClient.id));setClientModal(false);setConfirmModal(null);showToast('Cliente eliminado','error');}});}} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #c96b5f44",background:"#c96b5f10",color:"#c96b5f",cursor:"pointer",fontSize:12}}>Eliminar</button>}
+              {editingClient&&canEdit&&<button onClick={()=>{setConfirmModal({title:'¿Eliminar cliente?',body:editingClient.name,danger:true,onConfirm:()=>{setClients(p=>p.filter(c=>c.id!==editingClient.id));setClientModal(false);setConfirmModal(null);showToast('Cliente eliminado','error');}});}} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #c96b5f44",background:"#c96b5f10",color:"#c96b5f",cursor:"pointer",fontSize:12}}>Eliminar</button>}
               <div style={{flex:1}}/>
               <button onClick={()=>setClientModal(false)} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #454545",background:"transparent",color:"#a7a3a0",cursor:"pointer",fontSize:12}}>Cancelar</button>
               <button onClick={saveClient} disabled={!clientForm.name} style={{padding:"8px 18px",borderRadius:8,border:"none",fontSize:12,fontWeight:700,cursor:"pointer",background:!clientForm.name?"#454545":"#BA9F82",color:!clientForm.name?"#7c7876":"#2b2b2b"}}>{editingClient?"Guardar":"Agregar"}</button>
