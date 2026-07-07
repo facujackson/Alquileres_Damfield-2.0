@@ -958,7 +958,8 @@ export default function App() {
                                       {isBlq?`🚫 ${bk.bloqueoMotivo||"Bloqueado"}`:bk.sinCargo?`🎁 ${bk.sinCargoMotivo||"Sin cargo"}`:bk.clientName}
                                       {!isBlq&&bk.recurrence&&bk.recurrence!="none"&&<span style={{marginLeft:3,fontSize:8,opacity:0.6}}>🔁</span>}
                                     </div>
-                                    {!isBlq&&!bk.sinCargo&&(()=>{
+                                    {!isBlq&&(()=>{
+                                      if(bk.sinCargo||getNetAmount(bk)===0) return <div style={{fontSize:8,color:"#BA9F82",fontWeight:700}}>🎁 Sin cargo</div>;
                                       const net=getNetAmount(bk);
                                       const resta=net-getTotalPagado(bk);
                                       if(resta>0&&net>0) return <div style={{fontSize:8,color:"#f59e0b",fontWeight:700}}>⚠ {fmtMoney(resta)} restante</div>;
