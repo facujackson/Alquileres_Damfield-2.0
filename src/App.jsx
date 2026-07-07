@@ -48,7 +48,7 @@ const ESCRITORIO_MAX = 28;
 
 const ALL_HOURS    = Array.from({length:18},(_,i)=>i+6);
 const ALL_SLOTS    = Array.from({length:36},(_,i)=>6+i*0.5);  // 6:00 a 23:30
-const DEFAULT_HOURS= [18,18.5,19,19.5,20,20.5,21,21.5,22,22.5];
+const DEFAULT_HOURS= [18,19,20,21,22];
 const DAYS         = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
 const APP_VERSION  = "2.0";
 
@@ -584,7 +584,8 @@ export default function App() {
     const extra=new Set();
     expanded.forEach(b=>{
       if(weekDates.some(d=>dateKey(d)===b.date)){
-        for(let h=b.startHour;h<b.endHour;h+=0.5) if(!DEFAULT_HOURS.includes(h)) extra.add(h);
+        for(let h=Math.ceil(b.startHour);h<b.endHour;h++) if(!DEFAULT_HOURS.includes(h)) extra.add(h);
+        if(b.startHour%1!==0) extra.add(b.startHour);
       }
     });
     return [...extra].sort((a,b)=>a-b);
