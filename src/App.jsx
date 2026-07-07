@@ -47,7 +47,8 @@ const CONFLICT_GROUPS = [
 const ESCRITORIO_MAX = 28;
 
 const ALL_HOURS    = Array.from({length:18},(_,i)=>i+6);
-const DEFAULT_HOURS= [18,19,20,21,22];
+const ALL_SLOTS    = Array.from({length:36},(_,i)=>6+i*0.5);  // 6:00 a 23:30
+const DEFAULT_HOURS= [18,18.5,19,19.5,20,20.5,21,21.5,22,22.5];
 const DAYS         = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
 const APP_VERSION  = "2.0";
 
@@ -76,7 +77,8 @@ function DamfieldLogo({ size = 32 }) {
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const dateKey = d => d.toISOString().split("T")[0];
-const pad     = n => String(n).padStart(2,"0");
+const pad     = n => String(Math.floor(n)).padStart(2,"0");
+const fmtHour = h => h%1===0 ? pad(h)+":00" : pad(h)+":30";
 const fmtMoney= n => (n==null||n=="") ? "—" : `$${Number(n).toLocaleString("es-AR")}`;
 const fmtMonthYear = d => d.toLocaleDateString("es-AR",{month:"long",year:"numeric"});
 const fmtDateTime  = s => s ? new Date(s).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—";
@@ -161,7 +163,7 @@ function hasConflict(expanded,date,sh,eh,spaceId,excludeSeries){
 }
 function isPast(bk){
   if(!bk.date||bk.endHour==null) return false;
-  return new Date(bk.date+"T"+pad(bk.endHour)+":00:00") < new Date();
+  return new Date(bk.date+"T"+fmtHour(bk.endHour)+":00") < new Date();
 }
 function getTotalPagado(bk){
   if(bk.sinCargo||bk.isBloqueo) return 0;
@@ -350,9 +352,9 @@ function BookingBottomSheet({ form, setForm, editing, onSave, onClose, onDelete,
               {[{label:'Desde',key:'startHour'},{label:'Hasta',key:'endHour'}].map(({label,key})=>(
                 <div key={key}>
                   <label style={lblMob}>{label}</label>
-                  <select value={form[key]} onChange={e=>{const val=+e.target.value;setForm(f=>key==='startHour'?{...f,startHour:val,endHour:Math.max(val+1,f.endHour)}:{...f,endHour:val});}} style={{...inpMob,fontSize:15,fontWeight:700}}>
-                    {ALL_HOURS.filter(h=>key==='endHour'?h>form.startHour:true).map(h=><option key={h} value={h}>{pad(h)}:00</option>)}
-                    {key==='endHour'&&<option value={23}>23:00</option>}
+                  <select value={form[key]} onChange={e=>{const val=+e.target.value;setForm(f=>key==='startHour'?{...f,startHour:val,endHour:Math.max(val+0.5,f.endHour)}:{...f,endHour:val});}} style={{...inpMob,fontSize:15,fontWeight:700}}>
+                    {ALL_SLOTS.filter(h=>key==='endHour'?h>form.startHour:h<23.5).map(h=><option key={h} value={h}>{fmtHour(h)}</option>)}
+                    {key==='endHour'&&<option value={23.5}>23:30</option>}
                   </select>
                 </div>
               ))}
@@ -405,7 +407,7 @@ function BookingBottomSheet({ form, setForm, editing, onSave, onClose, onDelete,
             <div style={{display:'flex',gap:8}}>
               <button onClick={()=>setStep(0)} style={{flex:1,padding:14,borderRadius:12,border:'1px solid #454545',background:'transparent',color:'#a7a3a0',cursor:'pointer',fontSize:14,fontWeight:700}}>← Atrás</button>
               <button onClick={()=>setStep(2)} disabled={!form.sinCargo&&!form.clientName} style={{flex:2,padding:14,borderRadius:12,border:'none',fontSize:15,fontWeight:700,cursor:'pointer',background:(!form.sinCargo&&!form.clientName)?'#454545':'#BA9F82',color:(!form.sinCargo&&!form.clientName)?'#7c7876':'#2b2b2b'}}>
-                {form.sinCargo?'Guardar →':'Siguiente →'}
+                Siguiente →
               </button>
             </div>
           </div>
@@ -582,7 +584,7 @@ export default function App() {
     const extra=new Set();
     expanded.forEach(b=>{
       if(weekDates.some(d=>dateKey(d)===b.date)){
-        for(let h=b.startHour;h<b.endHour;h++) if(!DEFAULT_HOURS.includes(h)) extra.add(h);
+        for(let h=b.startHour;h<b.endHour;h+=0.5) if(!DEFAULT_HOURS.includes(h)) extra.add(h);
       }
     });
     return [...extra].sort((a,b)=>a-b);
@@ -654,7 +656,7 @@ export default function App() {
     setModal(false);
     const spLabel=SPACES[entry.space]?.label||entry.space;
     const who=entry.isBloqueo?`Bloqueo: ${entry.bloqueoMotivo||"sin motivo"}`:entry.sinCargo?`Sin cargo: ${entry.sinCargoMotivo||""}`:entry.clientName||"?";
-    logActivity(editing?"Reserva editada":"Reserva creada", `${who} · ${spLabel} · ${entry.date} ${entry.startHour}:00–${entry.endHour}:00`);
+    logActivity(editing?"Reserva editada":"Reserva creada", `${who} · ${spLabel} · ${entry.date} ${fmtHour(entry.startHour)}–${fmtHour(entry.endHour)}`);
     showToast(editing ? '✓ Reserva actualizada' : '✓ Reserva creada');
   }
   function del(id){
@@ -662,7 +664,7 @@ export default function App() {
     const bk=bookings.find(b=>b.id===id);
     const label=bk?.isBloqueo
       ? `Bloqueo: ${bk.bloqueoMotivo||'sin motivo'}`
-      : `${bk?.clientName||'Reserva sin nombre'} · ${bk?.date} ${bk?.startHour}:00–${bk?.endHour}:00`;
+      : `${bk?.clientName||'Reserva sin nombre'} · ${bk?.date} ${fmtHour(bk?.startHour||0)}–${fmtHour(bk?.endHour||0)}`;
     setConfirmModal({
       title:'¿Eliminar reserva?',
       body: label,
@@ -761,7 +763,7 @@ export default function App() {
 
   // ── Finanzas ──
   const finData = useMemo(()=>{
-    let filtered=expanded.filter(b=>!b.sinCargo&&!b.isBloqueo);
+    let filtered=expanded.filter(b=>!b.sinCargo&&!b.isBloqueo&&getNetAmount(b)>0);
     if(finPeriod==="semana"){
       const wk=getWeekDates(finDate).map(d=>dateKey(d));
       filtered=filtered.filter(b=>wk.includes(b.date));
@@ -919,11 +921,11 @@ export default function App() {
                       return(
                         <div key={hour} style={{display:"grid",gridTemplateColumns:"80px repeat(7,1fr)",borderBottom:"1px solid #0f1219",minHeight:44,background:isExtra?"#363030":"transparent"}}>
                           <div style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:600,color:isExtra?"#f59e0b":"#a7a3a0",background:"#303030",borderRight:"1px solid #454545",gap:2}}>
-                            {isExtra&&<span style={{fontSize:8,color:"#f59e0b"}}>●</span>}{pad(hour)}:00
+                            {isExtra&&<span style={{fontSize:8,color:"#f59e0b"}}>●</span>}{fmtHour(hour)}
                           </div>
                           {weekDates.map((date,di)=>{
                             const dk=dateKey(date);
-                            const cellBks=expanded.filter(b=>b.date===dk&&b.space===spaceId&&b.startHour<=hour&&b.endHour>hour);
+                            const cellBks=expanded.filter(b=>b.date===dk&&b.space===spaceId&&b.startHour<hour+1&&b.endHour>hour);
                             const isEscritorio=spaceId==="escritorio";
                             const isOcc=isEscritorio?cellBks.length>=ESCRITORIO_MAX:cellBks.length>0;
                             const isBlocked=!isOcc&&isBlockedBy(spaceId,expanded,dk,hour);
@@ -1042,11 +1044,11 @@ export default function App() {
                     <React.Fragment key={hour}>
                       {/* Hour label */}
                       <div style={{background:"#2b2b2b",borderRight:"1px solid #454545",borderBottom:hi<N-1?"1px solid #2f2f2f":"none",display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>
-                        <span style={{fontSize:10,fontWeight:700,color:isExtra?"#f59e0b":"#a7a3a0"}}>{pad(hour)}</span>
+                        <span style={{fontSize:10,fontWeight:700,color:isExtra?"#f59e0b":"#a7a3a0"}}>{fmtHour(hour)}</span>
                       </div>
                       {/* Cells per space — always rendered */}
                       {allCols.map(({sid},ci)=>{
-                        const bk=dayBookings.find(b=>b.space===sid&&b.startHour<=hour&&b.endHour>hour);
+                        const bk=dayBookings.find(b=>b.space===sid&&b.startHour<=hour&&b.endHour>hour&&b.startHour<hour+1);
                         const isBlocked=bk?.isBloqueo;
                         const isStart=bk&&bk.startHour===hour;
                         const isCont=bk&&!isStart;
@@ -1056,7 +1058,7 @@ export default function App() {
                             key={sid}
                             onClick={()=>{
                               if(bk){setSelected(bk);setModalTab("reserva");}
-                              else if(canEdit){setForm({...EMPTY_FORM,space:sid,date:dk,startHour:hour,endHour:hour+1});setSelected(null);setModalTab("reserva");}
+                              else if(canEdit){setForm({...EMPTY_FORM,space:sid,date:dk,startHour:hour,endHour:hour+0.5});setSelected(null);setModalTab("reserva");}
                             }}
                             style={{
                               borderBottom:hi<N-1?"1px solid #2a2a2a":"none",
@@ -1079,7 +1081,7 @@ export default function App() {
                                 ):(
                                   <>
                                     <span style={{fontSize:9,fontWeight:700,color:"#E2E0E1",lineHeight:1.2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{bk.clientName||"—"}</span>
-                                    <span style={{fontSize:8,color:"#7c7876",lineHeight:1.1}}>{pad(bk.startHour)}–{pad(bk.endHour)}</span>
+                                    <span style={{fontSize:8,color:"#7c7876",lineHeight:1.1}}>{fmtHour(bk.startHour)}–{fmtHour(bk.endHour)}</span>
                                   </>
                                 )}
                               </div>
@@ -1154,7 +1156,7 @@ export default function App() {
                           <div key={bk.id} onClick={e=>{e.stopPropagation();openEdit(bk);}}
                             style={{background:isBlq?"#3f1a1a":bk.sinCargo?"#454545":`${sp.color}22`,borderLeft:`3px solid ${isBlq?"#c96b5f":bk.sinCargo?"#454545":sp.color}`,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden"}}>
                             <div style={{fontSize:10,fontWeight:700,color:isBlq?"#c96b5f":bk.sinCargo?"#7c7876":sp.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                              {bk.startHour}:00 {isBlq?`🚫 ${bk.bloqueoMotivo||"Bloqueado"}`:bk.sinCargo?`🎁 ${bk.sinCargoMotivo||"Sin cargo"}`:bk.clientName}
+                              {fmtHour(bk.startHour)} {isBlq?`🚫 ${bk.bloqueoMotivo||"Bloqueado"}`:bk.sinCargo?`🎁 ${bk.sinCargoMotivo||"Sin cargo"}`:bk.clientName}
                             </div>
                           </div>
                         );
@@ -1249,7 +1251,7 @@ export default function App() {
               >
                 <div style={{minWidth:76}}>
                   <div style={{fontSize:10,color:"#7c7876"}}>{new Date(bk.date+"T12:00").toLocaleDateString("es-AR",{weekday:"short",day:"2-digit",month:"2-digit"})}</div>
-                  <div style={{fontSize:13,fontWeight:700}}>{bk.startHour}:00–{bk.endHour}:00</div>
+                  <div style={{fontSize:13,fontWeight:700}}>{fmtHour(bk.startHour)}–{fmtHour(bk.endHour)}</div>
                 </div>
                 <div style={{flex:1}}>
                   <div style={{fontSize:13,fontWeight:700,color:isBlq?"#c96b5f":"#E2E0E1"}}>
@@ -1453,7 +1455,7 @@ export default function App() {
                 >
                   <div style={{minWidth:76}}>
                     <div style={{fontSize:10,color:"#a16207"}}>{new Date(bk.date+"T12:00").toLocaleDateString("es-AR",{weekday:"short",day:"2-digit",month:"2-digit"})}</div>
-                    <div style={{fontSize:13,fontWeight:700}}>{bk.startHour}:00–{bk.endHour}:00</div>
+                    <div style={{fontSize:13,fontWeight:700}}>{fmtHour(bk.startHour)}–{fmtHour(bk.endHour)}</div>
                   </div>
                   <div style={{flex:1}}>
                     <div style={{fontSize:13,fontWeight:700}}>{bk.clientName}</div>
@@ -1632,7 +1634,7 @@ export default function App() {
                       {!isBlq&&bk.recurrence&&bk.recurrence!="none"&&<span style={{marginLeft:6,fontSize:10,color:"#7c7876"}}>🔁 recurrente</span>}
                     </div>
                     {/* Fecha y hora */}
-                    <div style={{fontSize:11,color:"#a7a3a0",marginBottom:10,textTransform:"capitalize"}}>{dateStr} · {bk.startHour}:00–{bk.endHour}:00hs</div>
+                    <div style={{fontSize:11,color:"#a7a3a0",marginBottom:10,textTransform:"capitalize"}}>{dateStr} · {fmtHour(bk.startHour)}–{fmtHour(bk.endHour)}hs</div>
                     {/* Info pills */}
                     <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
                       {client?.phone&&<span style={{fontSize:10,background:"#454545",borderRadius:6,padding:"3px 8px",color:"#a7a3a0"}}>📞 {client.phone}</span>}
@@ -1680,7 +1682,7 @@ export default function App() {
                             {resta>0?`⚠ ${fmtMoney(resta)} restante`:`✓ Pagado · ${fmtMoney(net)}`}
                           </div>
                         )}
-                        <div style={{fontSize:9,color:"#7c7876",marginTop:1}}>{bk.startHour}:00–{bk.endHour}:00{bk.createdBy?` · ${bk.createdBy}`:""}</div>
+                        <div style={{fontSize:9,color:"#7c7876",marginTop:1}}>{fmtHour(bk.startHour)}–{fmtHour(bk.endHour)}{bk.createdBy?` · ${bk.createdBy}`:""}</div>
                       </div>
                     );
                   })}
@@ -1769,8 +1771,8 @@ export default function App() {
 
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
               <FG label="Fecha"><input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={inpSt}/></FG>
-              <FG label="Desde"><select value={form.startHour} onChange={e=>setForm(f=>({...f,startHour:+e.target.value,endHour:Math.max(+e.target.value+1,f.endHour)}))} style={inpSt}>{ALL_HOURS.map(h=><option key={h} value={h}>{pad(h)}:00</option>)}</select></FG>
-              <FG label="Hasta"><select value={form.endHour} onChange={e=>setForm(f=>({...f,endHour:+e.target.value}))} style={inpSt}>{ALL_HOURS.filter(h=>h>form.startHour).map(h=><option key={h} value={h}>{pad(h)}:00</option>)}<option value={23}>23:00</option></select></FG>
+              <FG label="Desde"><select value={form.startHour} onChange={e=>setForm(f=>({...f,startHour:+e.target.value,endHour:Math.max(+e.target.value+0.5,f.endHour)}))} style={inpSt}>{ALL_SLOTS.filter(h=>h<23.5).map(h=><option key={h} value={h}>{fmtHour(h)}</option>)}</select></FG>
+              <FG label="Hasta"><select value={form.endHour} onChange={e=>setForm(f=>({...f,endHour:+e.target.value}))} style={inpSt}>{ALL_SLOTS.filter(h=>h>form.startHour).map(h=><option key={h} value={h}>{fmtHour(h)}</option>)}<option value={23.5}>23:30</option></select></FG>
             </div>
 
             {conflict&&<div style={{background:"#c96b5f15",border:"1px solid #c96b5f",borderRadius:8,padding:"7px 12px",fontSize:12,color:"#c96b5f",marginBottom:10}}>⚠️ Conflicto de horario con otro alquiler o cancha relacionada.</div>}
@@ -1843,7 +1845,7 @@ export default function App() {
                     ))}
                   </div>
                   {form.descuentoTipo!=="none"&&(
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                       <input type="number" value={form.descuentoValor} onChange={e=>setForm(f=>({...f,descuentoValor:e.target.value}))} placeholder={form.descuentoTipo==="pct"?"10":"5000"} style={{...inpSt,width:90}}/>
                       <span style={{fontSize:11,color:"#7c7876"}}>{form.descuentoTipo==="pct"?"%":"ARS"}</span>
                       {Number(form.totalAmount)>0&&Number(form.descuentoValor)>0&&(
@@ -1851,6 +1853,7 @@ export default function App() {
                       )}
                     </div>
                   )}
+                  {(()=>{const es100=form.descuentoTipo==="pct"&&Number(form.descuentoValor)>=100;const esCero=form.descuentoTipo==="monto"&&Number(form.totalAmount)>0&&Number(form.descuentoValor)>=Number(form.totalAmount);return(es100||esCero)&&(<div style={{marginTop:8,background:"#BA9F8215",border:"1px solid #BA9F8244",borderRadius:8,padding:"7px 10px",display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:13}}>🎁</span><span style={{fontSize:11,color:"#BA9F82",fontWeight:700}}>Cortesía — se registra en el historial del cliente a $0</span></div>);})()}
                 </div>
 
                 {/* Saldo calculado */}
@@ -2054,10 +2057,10 @@ export default function App() {
                       <div key={bk.id} onClick={()=>{setClientModal(false);openEdit(bk);}} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:"#a7a3a0",background:"#333333",borderRadius:6,padding:"4px 8px",cursor:"pointer",transition:"background 0.12s"}}
                         onMouseEnter={e=>e.currentTarget.style.background="#3e3b38"}
                         onMouseLeave={e=>e.currentTarget.style.background="#333333"}>
-                        <span>{new Date(bk.date+"T12:00").toLocaleDateString("es-AR",{weekday:"short",day:"2-digit",month:"2-digit"})} · {SPACES[bk.space]?.short} · {bk.startHour}:00–{bk.endHour}:00</span>
+                        <span>{new Date(bk.date+"T12:00").toLocaleDateString("es-AR",{weekday:"short",day:"2-digit",month:"2-digit"})} · {SPACES[bk.space]?.short} · {fmtHour(bk.startHour)}–{fmtHour(bk.endHour)}</span>
                         <div style={{display:"flex",alignItems:"center",gap:6}}>
                           {isPast(bk)&&bk.asistio!==null&&<span style={{fontSize:9,fontWeight:700,color:bk.asistio?"#22c55e":"#c96b5f"}}>{bk.asistio?"✓":"✗"}</span>}
-                          <span style={{color:"#22c55e",fontWeight:700}}>{bk.sinCargo?"SC":fmtMoney(bk.totalAmount)}</span>
+                          <span style={{color:"#22c55e",fontWeight:700}}>{bk.sinCargo||getNetAmount(bk)===0?"SC":fmtMoney(getNetAmount(bk))}</span>
                           <span style={{fontSize:9,color:"#454545"}}>›</span>
                         </div>
                       </div>
