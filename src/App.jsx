@@ -232,7 +232,9 @@ function LoginScreen({users, onLogin}) {
   function attempt() {
     setLoading(true); setError("");
     setTimeout(()=>{
-      const user = users.find(u=>u.username===username.trim()&&u.password===password);
+      const u_in = username.trim().toLowerCase();
+      const p_in = password.trim();
+      const user = users.find(u=>u.username.toLowerCase()===u_in && u.password===p_in);
       if(user) onLogin(user);
       else { setError("Usuario o contraseña incorrectos"); setLoading(false); }
     },400);
@@ -559,24 +561,41 @@ export default function App() {
   // ── Load from storage ──
   useEffect(()=>{
     async function load(){
-      const [bk,cl,us,log] = await Promise.all([dbGet("bookings"),dbGet("clients"),dbGet("users"),dbGet("activityLog")]);
-      if(bk) setBookings(bk);
-      if(cl) setClients(cl);
-      if(log) setActivityLog(log);
-      let resolvedUsers=DEFAULT_USERS;
-      if(us && Array.isArray(us) && us.length > 0) {
-        // Usar versión de Firebase para usuarios existentes (preserva contraseñas y emails cambiados)
-        const base = DEFAULT_USERS.map(d => us.find(u => u.id === d.id) || d);
-        const extras = us.filter(u => !DEFAULT_USERS.find(d => d.id === u.id));
-        resolvedUsers = [...base, ...extras];
-      }
-      setUsers(resolvedUsers);
-      // Auto-login desde sesión guardada
       try {
-        const saved=localStorage.getItem("damfield_session");
-        if(saved){ const {id}=JSON.parse(saved); const u=resolvedUsers.find(x=>x.id===id); if(u) setCurrentUser(u); }
-      } catch {}
-      setLoaded(true);
+        const [bk,cl,us,log] = await Promise.all([dbGet("bookings"),dbGet("clients"),dbGet("users"),dbGet("activityLog")]);
+        if(bk) setBookings(bk);
+        if(cl) setClients(cl);
+        if(log) setActivityLog(log);
+        let resolvedUsers=DEFAULT_USERS;
+        if(us && Array.isArray(us) && us.length > 0) {
+          // Usar versión de Firebase para usuarios existentes (preserva contraseñas y emails cambiados)
+          const base = DEFAULT_USERS.map(d => us.find(u => u.id === d.id) || d);
+          const extras = us.filter(u => !DEFAULT_USERS.find(d => d.id === u.id));
+          resolvedUsers = [...base, ...extras];
+          // Cachear en localStorage como respaldo para cuando Firebase esté lento
+          try { localStorage.setItem("damfield_users_cache", JSON.stringify(resolvedUsers)); } catch {}
+        } else {
+          // Firebase no devolvió usuarios — intentar caché local antes de usar defaults
+          try {
+            const cached = localStorage.getItem("damfield_users_cache");
+            if(cached) { const parsed = JSON.parse(cached); if(Array.isArray(parsed) && parsed.length > 0) resolvedUsers = parsed; }
+          } catch {}
+        }
+        setUsers(resolvedUsers);
+        // Auto-login desde sesión guardada
+        try {
+          const saved=localStorage.getItem("damfield_session");
+          if(saved){ const {id}=JSON.parse(saved); const u=resolvedUsers.find(x=>x.id===id); if(u) setCurrentUser(u); }
+        } catch {}
+      } catch(e) {
+        // Error inesperado — intentar caché local
+        try {
+          const cached = localStorage.getItem("damfield_users_cache");
+          if(cached) { const parsed = JSON.parse(cached); if(Array.isArray(parsed) && parsed.length > 0) setUsers(parsed); }
+        } catch {}
+      } finally {
+        setLoaded(true);
+      }
     }
     load();
   },[]);
@@ -584,7 +603,7 @@ export default function App() {
   // ── Persist ──
   useEffect(()=>{ if(loaded) dbSet("bookings",bookings);         },[bookings,loaded]);
   useEffect(()=>{ if(loaded) dbSet("clients",clients);           },[clients,loaded]);
-  useEffect(()=>{ if(loaded) dbSet("users",users);               },[users,loaded]);
+  useEffect(()=>{ if(loaded){ dbSet("users",users); try{localStorage.setItem("damfield_users_cache",JSON.stringify(users));}catch{} } },[users,loaded]);
   useEffect(()=>{ if(loaded) dbSet("activityLog",activityLog);   },[activityLog,loaded]);
 
   const weekDates = getWeekDates(currentDate);
